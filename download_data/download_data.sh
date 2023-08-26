@@ -8,6 +8,7 @@
 CURRENT_DIR=$(pwd)
 
 cp -r ../drive/MyDrive/csp/data ./
+cp  ../drive/MyDrive/csp/datasets/data/* ./data/
 
 #mkdir data
 cd data
