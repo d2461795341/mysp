@@ -10,7 +10,7 @@ import tqdm
 from torch.nn.modules.loss import CrossEntropyLoss
 from torch.utils.data.dataloader import DataLoader
 import torch.nn.functional as F
-from model.dfsp import DFSP
+from model.mysp import MYSP
 from parameters import parser, YML_PATH
 from loss import loss_calu
 
@@ -31,6 +31,14 @@ def train_model(model, optimizer, config, train_dataset, val_dataset, test_datas
     best_metric = 0
     
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.5)
+
+    if(config.epoch_start!=0):
+        path=os.path.join(config.save_path, f"{config.fusion}_epoch_{config.epoch_start}.pt")
+        checkpoint = torch.load(path)
+        model.load_state_dict(checkpoint['model'])  # 加载模型可学习参数
+        optimizer.load_state_dict(checkpoint['optimizer'])  # 加载优化器参数
+        scheduler.load_state_dict(checkpoint['lr_schedule'])
+
     attr2idx = train_dataset.attr2idx
     obj2idx = train_dataset.obj2idx
 
@@ -72,7 +80,7 @@ def train_model(model, optimizer, config, train_dataset, val_dataset, test_datas
         train_losses.append(np.mean(epoch_train_losses))
 
         if (i + 1) % config.save_every_n == 0:
-            torch.save(model.state_dict(), os.path.join(config.save_path, f"{config.fusion}_epoch_{i}.pt"))
+            torch.save({'model': model.state_dict(), 'optimizer':optimizer.state_dict(), 'lr_schedule': scheduler.state_dict()}, os.path.join(config.save_path, f"{config.fusion}_epoch_{i+1}.pt"))
 
         print("Evaluating val dataset:")
         loss_avg, val_result = evaluate(model, val_dataset)
@@ -156,7 +164,7 @@ if __name__ == "__main__":
     attributes = [attr.replace(".", " ").lower() for attr in allattrs]
     offset = len(attributes)
 
-    model = DFSP(config, attributes=attributes, classes=classes, offset=offset).cuda()
+    model = MYSP(config, attributes=attributes, classes=classes, offset=offset).cuda()
     optimizer = torch.optim.Adam(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
     
     # if config.load_model is not False:
@@ -169,3 +177,4 @@ if __name__ == "__main__":
     with open(os.path.join(config.save_path, "config.pkl"), "wb") as fp:
         pickle.dump(config, fp)
     print("done!")
+
