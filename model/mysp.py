@@ -35,8 +35,8 @@ class MYSP(nn.Module):
         self.classes = classes
         self.attr_dropout = nn.Dropout(config.attr_dropout)
         self.token_ids, self.soft_att_obj, self.ctx_vectors = self.construct_soft_prompt()
-        self.freeze_soft_att_obj = self.soft_att_obj
-        self.freeze_ctx_vectors =  self.ctx_vectors
+        self.freeze_soft_att_obj = self.soft_att_obj.detach().clone()
+        self.freeze_ctx_vectors =  self.ctx_vectors.detach().clone()
         self.offset = offset
         self.enable_pos_emb = True
         dtype = None
@@ -94,6 +94,7 @@ class MYSP(nn.Module):
         token_tensor = self.clip.token_embedding(
             class_token_ids.cuda()
         ).type(self.clip.dtype)
+
         soft_att_obj = self.attr_dropout(self.soft_att_obj)
         eos_idx = int(self.token_ids[0].argmax())
 

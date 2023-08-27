@@ -1,5 +1,5 @@
 from torch.nn.modules.loss import CrossEntropyLoss
-
+import torch
 
 def loss_calu(predict, target, config):
     loss_fn = CrossEntropyLoss()
@@ -22,3 +22,13 @@ def loss_calu(predict, target, config):
     loss = loss_logit_df + config.att_obj_w * (loss_att + loss_obj)
 
     return loss
+
+
+t1 = torch.ones(3, 3)
+t2 = t1/3
+t1[:, 2] = 2
+
+print(f"id(t1) = {id(t1)}")
+print(f"id(t2) = {id(t2)}")
+print(f"t1 = {t1}")
+print(f"t2 = {t2}")
