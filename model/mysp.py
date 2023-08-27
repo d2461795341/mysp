@@ -47,7 +47,7 @@ class MYSP(nn.Module):
         self.text_encoder = CustomTextEncoder(self.clip, self.dtype)
         self.adapter = Adapter(1024, 4).to(self.clip.dtype)
 
-        for name, param in self.model.named_parameters():
+        for name, param in self.named_parameters():
             if 'adapter' not in name:
                 param.requires_grad_(False)
 
