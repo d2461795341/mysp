@@ -35,8 +35,8 @@ class MYSP(nn.Module):
         self.classes = classes
         self.attr_dropout = nn.Dropout(config.attr_dropout)
         self.token_ids, self.soft_att_obj, self.ctx_vectors = self.construct_soft_prompt()
-        self.freeze_soft_att_obj = self.soft_att_obj.detach().clone()
-        self.freeze_ctx_vectors =  self.ctx_vectors.detach().clone()
+        self.freeze_soft_att_obj = self.soft_att_obj.detach().clone().cpu()
+        self.freeze_ctx_vectors =  self.ctx_vectors.detach().clone().cpu()
         self.offset = offset
         self.enable_pos_emb = True
         dtype = None
@@ -109,18 +109,21 @@ class MYSP(nn.Module):
         token_tensor[
         :, 1: len(self.soft_prompt) + 1, :
         ] = self.soft_prompt.type(self.clip.dtype)
-        token_tensor011, token_tensor101, token_tensor110 = token_tensor, token_tensor, token_tensor
+
+        token_tensor011 = token_tensor.detach().clone()
+        token_tensor101 = token_tensor.detach().clone()
+        token_tensor110 = token_tensor.detach().clone()
 
         token_tensor011[
         :, 1: len(self.soft_prompt) + 1, :
         ] = self.freeze_ctx_vectors.type(self.clip.dtype)
 
         token_tensor101[:, eos_idx - 2, :] = self.freeze_soft_att_obj[
-            attr_idx
+            attr_idx.cpu()
         ].type(self.clip.dtype)
 
         token_tensor110[:, eos_idx - 1, :] = self.freeze_soft_att_obj[
-            obj_idx + self.offset
+            obj_idx.cpu() + self.offset
             ].type(self.clip.dtype)
 
         return token_tensor011, token_tensor101, token_tensor110
