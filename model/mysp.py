@@ -45,7 +45,7 @@ class MYSP(nn.Module):
         else:
             self.dtype = dtype
         self.text_encoder = CustomTextEncoder(self.clip, self.dtype)
-        self.adapter = Adapter(1024, 4).to(self.clip.dtype)
+        self.adapter = Adapter(768, 4)
 
         for name, param in self.named_parameters():
             if 'adapter' not in name:
@@ -211,15 +211,15 @@ class MYSP(nn.Module):
 
         img_ft011, text_ft011 = self.fusion(img_ft.type(torch.float), text_ft011.type(torch.float), idx, b)
         img_ft011, text_ft011 = self.ft_to_logit(img_ft011.type(self.clip.dtype), text_ft011.type(self.clip.dtype))
-        img_ft011 = self.adapter(img_ft011)
+        img_ft011 = self.adapter(img_ft011.type(torch.float)).type(self.clip.dtype)
 
         img_ft101, text_ft101 = self.fusion(img_ft.type(torch.float), text_ft101.type(torch.float), idx, b)
         img_ft101, text_ft101 = self.ft_to_logit(img_ft101.type(self.clip.dtype), text_ft101.type(self.clip.dtype))
-        img_ft101 = self.adapter(img_ft101)
+        img_ft101 = self.adapter(img_ft101.type(torch.float)).type(self.clip.dtype)
 
         img_ft110, text_ft110 = self.fusion(img_ft.type(torch.float), text_ft110.type(torch.float), idx, b)
         img_ft110, text_ft110 = self.ft_to_logit(img_ft110.type(self.clip.dtype), text_ft110.type(self.clip.dtype))
-        img_ft110 = self.adapter(img_ft110)
+        img_ft110 = self.adapter(img_ft110.type(torch.float)).type(self.clip.dtype)
 
 
 
