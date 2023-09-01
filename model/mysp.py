@@ -10,6 +10,7 @@ from collections import OrderedDict
 from clip_modules.model_loader import load
 from model.common import *
 import numpy as np
+from utils import stable_softmax
 
 class Adapter(nn.Module):
     def __init__(self, c_in, reduction=4):
@@ -268,17 +269,17 @@ class MYSP(nn.Module):
         logits_att101, logits_obj101 = self.decompose_logits(logits101, idx)
         logits_att110, logits_obj110 = self.decompose_logits(logits110, idx)
 
-        prob011=F.softmax(logits011,dim=1)
-        prob101=F.softmax(logits101,dim=1)
-        prob110=F.softmax(logits110,dim=1)
+        prob011=stable_softmax(logits011)
+        prob101=stable_softmax(logits101)
+        prob110=stable_softmax(logits110)
 
-        prob_att011=F.softmax(logits_att011,dim=1)
-        prob_att101=F.softmax(logits_att101,dim=1)
-        prob_att110=F.softmax(logits_att110,dim=1)
+        prob_att011=stable_softmax(logits_att011)
+        prob_att101=stable_softmax(logits_att101)
+        prob_att110=stable_softmax(logits_att110)
 
-        prob_obj011=F.softmax(logits_obj011,dim=1)
-        prob_obj101=F.softmax(logits_obj101,dim=1)
-        prob_obj110=F.softmax(logits_obj110,dim=1)
+        prob_obj011=stable_softmax(logits_obj011)
+        prob_obj101=stable_softmax(logits_obj101)
+        prob_obj110=stable_softmax(logits_obj110)
 
         prob=(prob011+prob101+prob110)/3
         prob_att=(prob_att011+prob_att101+prob_att110)/3
