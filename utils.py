@@ -25,18 +25,6 @@ def load_args(filename, args):
             setattr(args, key, val)
 
 
-def stable_softmax(x):
-    # 减去每行的最大值，以防止上溢出
-    x_max, _ = torch.max(x, dim=1, keepdim=True)
-    x -= x_max
-
-    # 计算 Softmax 分子
-    exp_x = torch.exp(x)
-
-    # 计算 Softmax 分母
-    sum_exp_x = torch.sum(exp_x, dim=1, keepdim=True)
-
-    # 计算 Softmax 值
-    softmax_x = exp_x / sum_exp_x
-
-    return softmax_x
+def stable_softmax(x,axis=-1):
+    ex=torch.exp(x-torch.max(x,axis=axis,keepdims=True).values)
+    return ex/torch.sum(ex,axis=axis,keepdims=True)
