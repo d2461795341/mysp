@@ -262,9 +262,28 @@ class MYSP(nn.Module):
                 @ idx_text_feature110.t()
         )
 
-        logits = (logits011+logits101+logits110)/3
+        #logits = (logits011+logits101+logits110)/3
 
-        logits_att, logits_obj = self.decompose_logits(logits, idx)
+        logits_att011, logits_obj011 = self.decompose_logits(logits011, idx)
+        logits_att101, logits_obj101 = self.decompose_logits(logits101, idx)
+        logits_att110, logits_obj110 = self.decompose_logits(logits110, idx)
 
-        return (logits, logits_att, logits_obj)
+        prob011=F.softmax(logits011,dim=1)
+        prob101=F.softmax(logits101,dim=1)
+        prob110=F.softmax(logits110,dim=1)
+
+        prob_att011=F.softmax(logits_att011,dim=1)
+        prob_att101=F.softmax(logits_att101,dim=1)
+        prob_att110=F.softmax(logits_att110,dim=1)
+
+        prob_obj011=F.softmax(logits_obj011,dim=1)
+        prob_obj101=F.softmax(logits_obj101,dim=1)
+        prob_obj110=F.softmax(logits_obj110,dim=1)
+
+        prob=(prob011+prob101+prob110)/3
+        prob_att=(prob_att011+prob_att101+prob_att110)/3
+        prob_obj=(prob_obj011+prob_obj101+prob_obj110)/3
+        #print(torch.sum(prob, dim=1))
+
+        return (prob, prob_att, prob_obj)
 
