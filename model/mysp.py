@@ -286,5 +286,5 @@ class MYSP(nn.Module):
         prob_obj=(prob_obj011+prob_obj101+prob_obj110)/3
         #print(torch.sum(prob, dim=1))
 
-        return (prob, prob_att, prob_obj)
+        return (prob+1e-7, prob_att+1e-7, prob_obj+1e-7)
 
