@@ -286,5 +286,34 @@ class MYSP(nn.Module):
         prob_obj=(prob_obj011+prob_obj101+prob_obj110)/3
         #print(torch.sum(prob, dim=1))
 
+
+        #测试只用训练部分进行测试，还需要修改三个返回值中的prob变为my_prob，还需要修改construct_token_tensors返回全部训练部分
+        '''
+        text_feature, text_ft = self.text_encoder(
+            self.token_ids,
+            token_tensor,
+            enable_pos_emb=self.enable_pos_emb,
+        )
+        img_ft, text_ft = self.fusion(img_ft.type(torch.float), text_ft.type(torch.float), idx, b)
+        img_ft, text_ft = self.ft_to_logit(img_ft.type(self.clip.dtype), text_ft.type(self.clip.dtype))
+        img_ft = self.adapter(img_ft.type(torch.float)).type(self.clip.dtype)
+        batch_img = self.weight * batch_img + (1 - self.weight) * img_ft
+        normalized_img = batch_img / batch_img.norm(dim=-1, keepdim=True)
+        text_feature = self.weight * text_feature + (1 - self.weight) * text_ft
+        idx_text_feature = text_feature / text_feature.norm(
+            dim=-1, keepdim=True
+        )
+        logits = (
+                    self.clip.logit_scale.exp()
+                    * normalized_img
+                    @ idx_text_feature.t()
+            )
+        logits_att, logits_obj = self.decompose_logits(logits, idx)
+        my_prob=stable_softmax(logits)
+        my_prob_att=stable_softmax(logits_att)
+        my_prob_obj=stable_softmax(logits_obj)
+    
+        '''
+
         return (prob+1e-7, prob_att+1e-7, prob_obj+1e-7)
 
