@@ -18,7 +18,7 @@ from utils import *
 from loss import loss_calu
 from parameters import parser, YML_PATH
 from dataset import CompositionDataset
-from model.dfsp import DFSP
+from model.mysp import MYSP
 
 
 cudnn.benchmark = True
@@ -551,7 +551,7 @@ if __name__ == "__main__":
     attributes = [attr.replace(".", " ").lower() for attr in allattrs]
     offset = len(attributes)
 
-    model = DFSP(config, attributes=attributes, classes=classes, offset=offset).cuda()
+    model = MYSP(config, attributes=attributes, classes=classes, offset=offset).cuda()
     model.load_state_dict(torch.load(config.load_model))
 
     print('evaluating on the validation set')

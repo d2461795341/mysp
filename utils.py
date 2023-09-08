@@ -23,3 +23,8 @@ def load_args(filename, args):
     for key, group in data_loaded.items():
         for key, val in group.items():
             setattr(args, key, val)
+
+
+def stable_softmax(x,axis=-1):
+    ex=torch.exp(x-torch.max(x,axis=axis,keepdims=True).values)
+    return ex/torch.sum(ex,axis=axis,keepdims=True)

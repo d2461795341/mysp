@@ -10,6 +10,7 @@ from collections import OrderedDict
 from clip_modules.model_loader import load
 from model.common import *
 import numpy as np
+from utils import stable_softmax
 
 class Adapter(nn.Module):
     def __init__(self, c_in, reduction=4):
@@ -35,8 +36,13 @@ class MYSP(nn.Module):
         self.classes = classes
         self.attr_dropout = nn.Dropout(config.attr_dropout)
         self.token_ids, self.soft_att_obj, self.ctx_vectors = self.construct_soft_prompt()
+<<<<<<< HEAD
         self.freeze_soft_att_obj = self.soft_att_obj
         self.freeze_ctx_vectors =  self.ctx_vectors
+=======
+        self.freeze_soft_att_obj = self.soft_att_obj.detach().clone().cpu()
+        self.freeze_ctx_vectors =  self.ctx_vectors.detach().clone().cpu()
+>>>>>>> c0af78033ce8308d2dad267cbbad28edc206b2d9
         self.offset = offset
         self.enable_pos_emb = True
         dtype = None
@@ -45,7 +51,11 @@ class MYSP(nn.Module):
         else:
             self.dtype = dtype
         self.text_encoder = CustomTextEncoder(self.clip, self.dtype)
+<<<<<<< HEAD
         #self.adapter = Adapter(1024, 4).to(self.clip.dtype)
+=======
+        self.adapter = Adapter(768, 4)
+>>>>>>> c0af78033ce8308d2dad267cbbad28edc206b2d9
 
         for name, param in self.named_parameters():
             #if 'adapter' not in name:
@@ -109,18 +119,21 @@ class MYSP(nn.Module):
         token_tensor[
         :, 1: len(self.soft_prompt) + 1, :
         ] = self.soft_prompt.type(self.clip.dtype)
-        token_tensor011, token_tensor101, token_tensor110 = token_tensor, token_tensor, token_tensor
+
+        token_tensor011 = token_tensor.detach().clone()
+        token_tensor101 = token_tensor.detach().clone()
+        token_tensor110 = token_tensor.detach().clone()
 
         token_tensor011[
         :, 1: len(self.soft_prompt) + 1, :
         ] = self.freeze_ctx_vectors.type(self.clip.dtype)
 
         token_tensor101[:, eos_idx - 2, :] = self.freeze_soft_att_obj[
-            attr_idx
+            attr_idx.cpu()
         ].type(self.clip.dtype)
 
         token_tensor110[:, eos_idx - 1, :] = self.freeze_soft_att_obj[
-            obj_idx + self.offset
+            obj_idx.cpu() + self.offset
             ].type(self.clip.dtype)
 
         return token_tensor011, token_tensor101, token_tensor110
@@ -208,6 +221,7 @@ class MYSP(nn.Module):
 
         img_ft011, text_ft011 = self.fusion(img_ft.type(torch.float), text_ft011.type(torch.float), idx, b)
         img_ft011, text_ft011 = self.ft_to_logit(img_ft011.type(self.clip.dtype), text_ft011.type(self.clip.dtype))
+<<<<<<< HEAD
         #img_ft011 = self.adapter(img_ft011)
 
         img_ft101, text_ft101 = self.fusion(img_ft.type(torch.float), text_ft101.type(torch.float), idx, b)
@@ -217,6 +231,17 @@ class MYSP(nn.Module):
         img_ft110, text_ft110 = self.fusion(img_ft.type(torch.float), text_ft110.type(torch.float), idx, b)
         img_ft110, text_ft110 = self.ft_to_logit(img_ft110.type(self.clip.dtype), text_ft110.type(self.clip.dtype))
         #img_ft110 = self.adapter(img_ft110)
+=======
+        img_ft011 = self.adapter(img_ft011.type(torch.float)).type(self.clip.dtype)
+
+        img_ft101, text_ft101 = self.fusion(img_ft.type(torch.float), text_ft101.type(torch.float), idx, b)
+        img_ft101, text_ft101 = self.ft_to_logit(img_ft101.type(self.clip.dtype), text_ft101.type(self.clip.dtype))
+        img_ft101 = self.adapter(img_ft101.type(torch.float)).type(self.clip.dtype)
+
+        img_ft110, text_ft110 = self.fusion(img_ft.type(torch.float), text_ft110.type(torch.float), idx, b)
+        img_ft110, text_ft110 = self.ft_to_logit(img_ft110.type(self.clip.dtype), text_ft110.type(self.clip.dtype))
+        img_ft110 = self.adapter(img_ft110.type(torch.float)).type(self.clip.dtype)
+>>>>>>> c0af78033ce8308d2dad267cbbad28edc206b2d9
 
 
 
@@ -259,9 +284,57 @@ class MYSP(nn.Module):
                 @ idx_text_feature110.t()
         )
 
-        logits = (logits011+logits101+logits110)/3
+        #logits = (logits011+logits101+logits110)/3
 
+        logits_att011, logits_obj011 = self.decompose_logits(logits011, idx)
+        logits_att101, logits_obj101 = self.decompose_logits(logits101, idx)
+        logits_att110, logits_obj110 = self.decompose_logits(logits110, idx)
+
+        prob011=stable_softmax(logits011)
+        prob101=stable_softmax(logits101)
+        prob110=stable_softmax(logits110)
+
+        prob_att011=stable_softmax(logits_att011)
+        prob_att101=stable_softmax(logits_att101)
+        prob_att110=stable_softmax(logits_att110)
+
+        prob_obj011=stable_softmax(logits_obj011)
+        prob_obj101=stable_softmax(logits_obj101)
+        prob_obj110=stable_softmax(logits_obj110)
+
+        prob=(prob011+prob101+prob110)/3
+        prob_att=(prob_att011+prob_att101+prob_att110)/3
+        prob_obj=(prob_obj011+prob_obj101+prob_obj110)/3
+        #print(torch.sum(prob, dim=1))
+
+
+        #测试只用训练部分进行测试，还需要修改三个返回值中的prob变为my_prob，还需要修改construct_token_tensors返回全部训练部分
+        '''
+        text_feature, text_ft = self.text_encoder(
+            self.token_ids,
+            token_tensor,
+            enable_pos_emb=self.enable_pos_emb,
+        )
+        img_ft, text_ft = self.fusion(img_ft.type(torch.float), text_ft.type(torch.float), idx, b)
+        img_ft, text_ft = self.ft_to_logit(img_ft.type(self.clip.dtype), text_ft.type(self.clip.dtype))
+        img_ft = self.adapter(img_ft.type(torch.float)).type(self.clip.dtype)
+        batch_img = self.weight * batch_img + (1 - self.weight) * img_ft
+        normalized_img = batch_img / batch_img.norm(dim=-1, keepdim=True)
+        text_feature = self.weight * text_feature + (1 - self.weight) * text_ft
+        idx_text_feature = text_feature / text_feature.norm(
+            dim=-1, keepdim=True
+        )
+        logits = (
+                    self.clip.logit_scale.exp()
+                    * normalized_img
+                    @ idx_text_feature.t()
+            )
         logits_att, logits_obj = self.decompose_logits(logits, idx)
+        my_prob=stable_softmax(logits)
+        my_prob_att=stable_softmax(logits_att)
+        my_prob_obj=stable_softmax(logits_obj)
+    
+        '''
 
-        return (logits, logits_att, logits_obj)
+        return (prob+1e-7, prob_att+1e-7, prob_obj+1e-7)
 
