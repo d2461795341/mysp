@@ -35,8 +35,8 @@ class MYSP(nn.Module):
         self.classes = classes
         self.attr_dropout = nn.Dropout(config.attr_dropout)
         self.token_ids, self.soft_att_obj, self.ctx_vectors = self.construct_soft_prompt()
-        self.freeze_soft_att_obj = self.soft_att_obj.detach().clone()
-        self.freeze_ctx_vectors =  self.ctx_vectors.detach().clone()
+        self.freeze_soft_att_obj = self.soft_att_obj
+        self.freeze_ctx_vectors =  self.ctx_vectors
         self.offset = offset
         self.enable_pos_emb = True
         dtype = None
@@ -45,11 +45,12 @@ class MYSP(nn.Module):
         else:
             self.dtype = dtype
         self.text_encoder = CustomTextEncoder(self.clip, self.dtype)
-        self.adapter = Adapter(1024, 4).to(self.clip.dtype)
+        #self.adapter = Adapter(1024, 4).to(self.clip.dtype)
 
         for name, param in self.named_parameters():
-            if 'adapter' not in name:
-                param.requires_grad_(False)
+            #if 'adapter' not in name:
+                #param.requires_grad_(False)
+            param.requires_grad_(False)
 
         self.soft_att_obj = nn.Parameter(self.soft_att_obj)
         self.soft_prompt = nn.Parameter(self.ctx_vectors).cuda()
@@ -94,7 +95,6 @@ class MYSP(nn.Module):
         token_tensor = self.clip.token_embedding(
             class_token_ids.cuda()
         ).type(self.clip.dtype)
-
         soft_att_obj = self.attr_dropout(self.soft_att_obj)
         eos_idx = int(self.token_ids[0].argmax())
 
@@ -208,15 +208,15 @@ class MYSP(nn.Module):
 
         img_ft011, text_ft011 = self.fusion(img_ft.type(torch.float), text_ft011.type(torch.float), idx, b)
         img_ft011, text_ft011 = self.ft_to_logit(img_ft011.type(self.clip.dtype), text_ft011.type(self.clip.dtype))
-        img_ft011 = self.adapter(img_ft011)
+        #img_ft011 = self.adapter(img_ft011)
 
         img_ft101, text_ft101 = self.fusion(img_ft.type(torch.float), text_ft101.type(torch.float), idx, b)
         img_ft101, text_ft101 = self.ft_to_logit(img_ft101.type(self.clip.dtype), text_ft101.type(self.clip.dtype))
-        img_ft101 = self.adapter(img_ft101)
+        #img_ft101 = self.adapter(img_ft101)
 
         img_ft110, text_ft110 = self.fusion(img_ft.type(torch.float), text_ft110.type(torch.float), idx, b)
         img_ft110, text_ft110 = self.ft_to_logit(img_ft110.type(self.clip.dtype), text_ft110.type(self.clip.dtype))
-        img_ft110 = self.adapter(img_ft110)
+        #img_ft110 = self.adapter(img_ft110)
 
 
 
