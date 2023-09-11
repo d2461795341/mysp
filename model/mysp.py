@@ -21,10 +21,10 @@ class Adapter(nn.Module):
             nn.Linear(c_in // reduction, c_in, bias=False),
             nn.ReLU(inplace=True)
         )
-
     def forward(self, x):
-        x = self.fc(x)
-        return x
+        orig_type = x.dtype
+        x = self.fc(x.type(torch.float32))
+        return x.type(orig_type)
 
 class MYSP(nn.Module):
     def __init__(self, config, attributes, classes, offset):
@@ -52,14 +52,12 @@ class MYSP(nn.Module):
             self.dtype = dtype
         self.text_encoder = CustomTextEncoder(self.clip, self.dtype)
 
-        #self.adapter = Adapter(1024, 4).to(self.clip.dtype)
-
-        #self.adapter = Adapter(768, 4)
+        if(self.config.adapter_place!="none"):
+            self.additional_visual_params = nn.ModuleList([Adapter(1024,4) for i in range(2*self.clip.visual.transformer.layers)])
 
         for name, param in self.named_parameters():
-            #if 'adapter' not in name:
-                #param.requires_grad_(False)
-            param.requires_grad_(False)
+            if 'adapter' not in name:
+                param.requires_grad_(False)
 
         self.soft_att_obj = nn.Parameter(self.soft_att_obj)
         self.soft_prompt = nn.Parameter(self.ctx_vectors).cuda()
@@ -158,6 +156,62 @@ class MYSP(nn.Module):
             x = x @ self.clip.visual.proj
         return x, img_feature
 
+    def encode_image_with_adapter(self, x: torch.Tensor):
+        # self.clip is the CLIP model
+        x = self.clip.visual.conv1(x)  # shape = [*, width, grid, grid]
+        x = x.reshape(x.shape[0], x.shape[1], -1)  # shape = [*, width, grid ** 2]
+        x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]
+        x = torch.cat([self.clip.visual.class_embedding.to(x.dtype) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device), x], dim=1)  # shape = [*, grid ** 2 + 1, width]
+        x = x + self.clip.visual.positional_embedding.to(x.dtype)
+        x = self.clip.visual.ln_pre(x)
+
+        x = x.permute(1, 0, 2)  # NLD -> LND
+        
+        # img_feature = self.clip.visual.transformer(x)
+        for i_block in range(self.clip.visual.transformer.layers):
+            # add Adapter to self.attention
+            if self.config.adapter_place in ['attn', 'all'] and self.config.adapter_option == 'parallel':
+                # self.additional_visual_params is nn.ModuleList that contains Adapters for each layer
+                adapt_x = self.additional_visual_params[i_block](x)
+            residual = x
+            x = self.clip.visual.transformer.resblocks[i_block].attention(
+                self.clip.visual.transformer.resblocks[i_block].ln_1(x)
+            )
+            if self.config.adapter_place in ['attn', 'all']:
+                if self.config.adapter_option == 'parallel':
+                    x = x + adapt_x
+                elif self.config.adapter_option == 'sequential':
+                    x = self.additional_visual_params[i_block](x)
+                else:
+                    raise NotImplementedError('{0} is not an implemented adapter option!'.format(self.config.adapter_option))
+            x = x + residual
+
+            # add Adapter to feed-forward
+            i_adapter = i_block
+            if self.config.adapter_place == 'all':
+                i_adapter = i_adapter + self.clip.visual.transformer.layers
+            if self.config.adapter_place in ['ffn', 'all'] and self.config.adapter_option == 'parallel':
+                adapt_x = self.additional_visual_params[i_adapter](x)
+            residual = x
+            x = self.clip.visual.transformer.resblocks[i_block].mlp(
+                self.clip.visual.transformer.resblocks[i_block].ln_2(x)
+            )
+            if self.config.adapter_place in ['ffn', 'all']:
+                if self.config.adapter_option == 'parallel':
+                    x = x + adapt_x
+                elif self.config.adapter_option == 'sequential':
+                    x = self.additional_visual_params[i_adapter](x)
+                else:
+                    raise NotImplementedError('{0} is not an implemented adapter option!'.format(self.config.adapter_option))
+            x = x + residual
+
+        img_feature = x.permute(1, 0, 2)  # LND -> NLD
+
+        img_feature = self.clip.visual.ln_post(img_feature)
+        if self.clip.visual.proj is not None:
+            img_feature = img_feature @ self.clip.visual.proj
+        return img_feature[:, 0, :], img_feature
+
     def ft_to_logit(self, img, txt):
         img_feature = img.permute(1, 0, 2)  # LND -> NLD
 
@@ -198,7 +252,11 @@ class MYSP(nn.Module):
     def forward(self, batch_img, idx):
         b = batch_img.shape[0]
         l, _ = idx.shape
-        batch_img, img_ft = self.visual(batch_img.type(self.clip.dtype))  ## bs * 768
+        if(self.config.adapter_place=="none"):
+            batch_img, img_ft = self.visual(batch_img.type(self.clip.dtype))  ## bs * 768
+        else:
+            batch_img, img_ft = self.encode_image_with_adapter(batch_img.type(self.clip.dtype))  ## bs * 768
+        
         token_tensor011, token_tensor101, token_tensor110 = self.construct_token_tensors(idx)
 
         text_feature011, text_ft011 = self.text_encoder(
@@ -221,15 +279,12 @@ class MYSP(nn.Module):
         
         img_ft011, text_ft011 = self.fusion(img_ft.type(torch.float), text_ft011.type(torch.float), idx, b)
         img_ft011, text_ft011 = self.ft_to_logit(img_ft011.type(self.clip.dtype), text_ft011.type(self.clip.dtype))
-        #img_ft011 = self.adapter(img_ft011.type(torch.float)).type(self.clip.dtype)
-
+        
         img_ft101, text_ft101 = self.fusion(img_ft.type(torch.float), text_ft101.type(torch.float), idx, b)
         img_ft101, text_ft101 = self.ft_to_logit(img_ft101.type(self.clip.dtype), text_ft101.type(self.clip.dtype))
-        #img_ft101 = self.adapter(img_ft101.type(torch.float)).type(self.clip.dtype)
-
+        
         img_ft110, text_ft110 = self.fusion(img_ft.type(torch.float), text_ft110.type(torch.float), idx, b)
         img_ft110, text_ft110 = self.ft_to_logit(img_ft110.type(self.clip.dtype), text_ft110.type(self.clip.dtype))
-        #img_ft110 = self.adapter(img_ft110.type(torch.float)).type(self.clip.dtype)
 
 
 
