@@ -36,5 +36,5 @@ parser.add_argument("--text_encoder_batch_size", help="batch size of the text en
 parser.add_argument('--threshold', type=float, help="optional threshold")
 parser.add_argument('--threshold_trials', type=int, default=50, help="how many threshold values to try")
 
-parser.add_argument('--adapter_place', type=str, default='none', help="whether to use adapter and where to put it, choices = [none, attn, ffn, all]")
+parser.add_argument('--adapter_place', type=str, default='all', help="whether to use adapter and where to put it, choices = [none, attn, ffn, all]")
 parser.add_argument('--adapter_option', type=str, default='parallel', help="choices = [parallel, sequential]")

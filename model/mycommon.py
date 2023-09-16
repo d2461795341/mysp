@@ -206,8 +206,8 @@ class FusionTextImageBlock(nn.Module):
         self.dropout = nn.Dropout(0.3)
         self.crossblock_img = CrossResidualAttentionBlock(width_img, width_img//64, attn_mask)
         self.crossblock_txt = CrossResidualAttentionBlock(width_txt, width_txt//64, attn_mask)
-        #self.resblocks_img = nn.Sequential(*[ResidualAttentionBlock(width_img, width_img//64, attn_mask) for _ in range(layers)])
-        #self.resblocks_txt = nn.Sequential(*[ResidualAttentionBlock(width_txt, width_txt//64, attn_mask) for _ in range(layers)])
+        self.resblocks_img = nn.Sequential(*[ResidualAttentionBlock(width_img, width_img//64, attn_mask) for _ in range(layers)])
+        self.resblocks_txt = nn.Sequential(*[ResidualAttentionBlock(width_txt, width_txt//64, attn_mask) for _ in range(layers)])
         self.txt_fine_tune = nn.Linear(self.width_txt, self.width_txt)
 
 
@@ -243,9 +243,9 @@ class FusionTextImageBlock(nn.Module):
     def forward(self, x_image: torch.Tensor, x_text_s: torch.Tensor, x_text_o: torch.Tensor, x_text_c: torch.Tensor, idx, b: int):
 
         x_txt = self.crossblock_txt(self.decompose(x_text_c, idx),torch.cat((x_text_s, x_text_o), 1))
-        #x_txt = self.resblocks_txt(x_txt)
+        x_txt = self.resblocks_txt(x_txt)
         x_txt = self.compose(x_txt, idx)
 
         x_img = self.crossblock_img(x_image, self.state_object2img(torch.cat((x_text_s, x_text_o), 1), idx, b))
-        #x_img = self.resblocks_img(x_img)
+        x_img = self.resblocks_img(x_img)
         return x_img, x_txt

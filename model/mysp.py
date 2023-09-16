@@ -309,10 +309,14 @@ class MYSP(nn.Module):
         )
 
 
-        img_ft, text_ft_c = self.fusion(img_ft.type(torch.float), text_ft_s.type(torch.float), text_ft_o.type(torch.float), text_ft_c.type(torch.float), idx, b)
+        img_ft, text_ft_c = self.fusion(img_ft.type(torch.float).permute(1, 0, 2), text_ft_s.type(torch.float).permute(1, 0, 2), text_ft_o.type(torch.float).permute(1, 0, 2), text_ft_c.type(torch.float).permute(1, 0, 2), idx, b)
+
+        img_ft = img_ft.permute(1, 0, 2)
+        text_ft_c = text_ft_c.permute(1, 0, 2)
+        
 
         img_ft = img_ft[:, 0, :]
-        text_ft_c = text_ft_c[torch.arange(text_ft_c.shape[0]), token_ids.argmax(dim=-1)]
+        text_ft_c = text_ft_c[torch.arange(text_ft_c.shape[0]), self.token_ids_c.argmax(dim=-1)]
 
 
 
@@ -322,8 +326,9 @@ class MYSP(nn.Module):
         idx_text_feature_c = text_feature_c / text_feature_c.norm(dim=-1, keepdim=True)
 
         idx_text_feature_s = text_feature_s / text_feature_s.norm(dim=-1, keepdim=True)
-
+        idx_text_feature_s = idx_text_feature_s.type(torch.float)
         idx_text_feature_o = text_feature_o / text_feature_o.norm(dim=-1, keepdim=True)
+        idx_text_feature_o = idx_text_feature_o.type(torch.float)
 
         
         logits_c = (
