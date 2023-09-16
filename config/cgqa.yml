@@ -23,7 +23,8 @@ train:
   save_path: ../drive/MyDrive/mysp_result/cgqa
   best_model_metric: best_loss     #best_unseen  best_seen AUC best_loss best_hm
   load_model: False     # False or model path
-  att_obj_w: 0.01
+  com2_att_obj_w: 0.01
+  att_obj_w: 0.1
 
 test:
   eval_batch_size: 128

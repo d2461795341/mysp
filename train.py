@@ -56,7 +56,9 @@ def train_model(model, optimizer, config, train_dataset, val_dataset, test_datas
         for bid, batch in enumerate(train_dataloader):
 
             batch_img = batch[0].cuda()
+            
             predict = model(batch_img, train_pairs)
+            
 
             loss = loss_calu(predict, batch, config)
 

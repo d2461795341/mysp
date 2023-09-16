@@ -57,7 +57,8 @@ class CustomTextEncoder(torch.nn.Module):
             else text_features
         )
         x = x.permute(1, 0, 2)
-
+        #DFSP version
+        '''
         text_feature = self.transformer(x)
 
 
@@ -74,6 +75,16 @@ class CustomTextEncoder(torch.nn.Module):
         )
 
         return tf, text_feature
+        '''
+        #Troika version
+        x = self.transformer(x)
+        text_feature = x.permute(1, 0, 2)
+        text_feature = self.ln_final(text_feature)
+        text_feature = text_feature  @ self.text_projection
+        tf = text_feature[torch.arange(text_feature.shape[0]), token_ids.argmax(dim=-1)]  # POS of <EOS> 
+        return  tf, text_feature
+
+       
 
 
 class MLP(nn.Module):
@@ -124,20 +135,6 @@ class LayerNorm(nn.LayerNorm):
         ret = super().forward(x.type(torch.float32))
         return ret.type(orig_type)
 
-class Adapter(nn.Module):
-    def __init__(self, c_in, reduction=4):
-        super(Adapter, self).__init__()
-        self.fc = nn.Sequential(
-            nn.Linear(c_in, c_in // reduction, bias=False),
-            nn.ReLU(inplace=True),
-            nn.Linear(c_in // reduction, c_in, bias=False),
-            nn.ReLU(inplace=True)
-        )
-    def forward(self, x):
-        orig_type = x.dtype
-        x = self.fc(x.type(torch.float32))
-        return x.type(orig_type)
-
 
 class QuickGELU(nn.Module):
     def forward(self, x: torch.Tensor):
@@ -148,7 +145,7 @@ class ResidualAttentionBlock(nn.Module):
     def __init__(self, d_model: int, n_head: int, attn_mask: torch.Tensor = None):
         super().__init__()
 
-        self.attn = nn.MultiheadAttention(d_model, n_head)
+        self.attn = nn.MultiheadAttention(embed_dim=d_model, num_heads=n_head, batch_first=True)
         self.ln_1 = LayerNorm(d_model)
         self.mlp = nn.Sequential(OrderedDict([
             ("c_fc", nn.Linear(d_model, d_model * 4)),
@@ -173,7 +170,7 @@ class CrossResidualAttentionBlock(nn.Module):
     def __init__(self, d_model: int, n_head: int, attn_mask: torch.Tensor = None):
         super().__init__()
 
-        self.attn = nn.MultiheadAttention(d_model, n_head)
+        self.attn = nn.MultiheadAttention(embed_dim=d_model, num_heads=n_head, batch_first=True)
         self.ln_x = LayerNorm(d_model)
         self.ln_y = LayerNorm(d_model)
         self.mlp = nn.Sequential(OrderedDict([
@@ -205,12 +202,13 @@ class FusionTextImageBlock(nn.Module):
         self.context_length = context_length
         self.attributes = attributes
         self.classes = classes
-        self.txt2img_transform_layer1 = nn.Linear(width_txt, width_img)
-        self.txt2img_transform_layer2 = nn.Linear(context_length * (attributes + classes), 257)
+        self.state_object2img_transform_layer = nn.Linear(context_length * (attributes + classes), 257)
         self.dropout = nn.Dropout(0.3)
         self.crossblock_img = CrossResidualAttentionBlock(width_img, width_img//64, attn_mask)
-        self.resblocks_img = nn.Sequential(*[ResidualAttentionBlock(width_img, width_img//64, attn_mask) for _ in range(layers)])
-        self.resblocks_txt = nn.Sequential(*[ResidualAttentionBlock(width_txt, width_txt//64, attn_mask) for _ in range(layers)])
+        self.crossblock_txt = CrossResidualAttentionBlock(width_txt, width_txt//64, attn_mask)
+        #self.resblocks_img = nn.Sequential(*[ResidualAttentionBlock(width_img, width_img//64, attn_mask) for _ in range(layers)])
+        #self.resblocks_txt = nn.Sequential(*[ResidualAttentionBlock(width_txt, width_txt//64, attn_mask) for _ in range(layers)])
+        self.txt_fine_tune = nn.Linear(self.width_txt, self.width_txt)
 
 
     def decompose(self, text_feature, idx):
@@ -226,29 +224,28 @@ class FusionTextImageBlock(nn.Module):
         return text_decom_feature
 
 
-
-    def img2txt(self, x: torch.Tensor):
-        x = self.img2txt_transform_layer1(x)
-        x = x.permute(2,1,0)
-        x = self.img2txt_transform_layer2(x)
-        x = x.permute(2,1,0).reshape(-1, (self.attributes + self.classes), self.width_txt)
-        x = self.dropout(x)
-        return x
-
-    def txt2img(self, x:torch.Tensor, idx, b: int):
-        x = self.decompose(x, idx)
-        x = self.txt2img_transform_layer1(x)
-        x = rearrange(x, 't l c -> c (t l)')
-        x = self.txt2img_transform_layer2(x) #width_img * 257 (1024 * 257)
-        x = self.dropout(x)
-        x = x.permute(1,0).unsqueeze(1).repeat(1,b,1) # 257 * batchsize * 1024
-        return x
+    def compose(self, text_feature, idx):
+        t, l, c = text_feature.shape
+        att_idx, obj_idx = idx[:, 0].cpu().numpy(), idx[:, 1].cpu().numpy()
+        text_com_feature = torch.zeros(t, len(idx), c).cuda()
+        text_com_feature = text_feature[:, att_idx, :] * text_feature[:, obj_idx + self.attributes, :]
+        text_com_feature = self.txt_fine_tune(text_com_feature)
+        return text_com_feature
         
 
-    def forward(self, x_image: torch.Tensor, x_text: torch.Tensor, idx, b: int):
-            x_img = self.crossblock_img(x_image, self.txt2img(x_text, idx, b))
+    def state_object2img(self, x:torch.Tensor, idx, b: int):
+        x = rearrange(x, 't l c -> c (t l)')
+        x = self.state_object2img_transform_layer(x) 
+        x = self.dropout(x)
+        x = x.permute(1,0).unsqueeze(1).repeat(1,b,1)
+        return x
+    
+    def forward(self, x_image: torch.Tensor, x_text_s: torch.Tensor, x_text_o: torch.Tensor, x_text_c: torch.Tensor, idx, b: int):
 
-            x_img = self.resblocks_img(x_img)
+        x_txt = self.crossblock_txt(self.decompose(x_text_c, idx),torch.cat((x_text_s, x_text_o), 1))
+        #x_txt = self.resblocks_txt(x_txt)
+        x_txt = self.compose(x_txt, idx)
 
-            x_txt = self.resblocks_txt(x_text)
-            return x_img, x_txt
+        x_img = self.crossblock_img(x_image, self.state_object2img(torch.cat((x_text_s, x_text_o), 1), idx, b))
+        #x_img = self.resblocks_img(x_img)
+        return x_img, x_txt

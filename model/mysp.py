@@ -8,7 +8,7 @@ import argparse
 import clip
 from collections import OrderedDict
 from clip_modules.model_loader import load
-from model.common import *
+from model.mycommon import *
 import numpy as np
 from utils import stable_softmax
 
@@ -35,13 +35,7 @@ class MYSP(nn.Module):
         self.attributes = attributes
         self.classes = classes
         self.attr_dropout = nn.Dropout(config.attr_dropout)
-        self.token_ids, self.soft_att_obj, self.ctx_vectors = self.construct_soft_prompt()
-
-        self.freeze_soft_att_obj = self.soft_att_obj
-        self.freeze_ctx_vectors =  self.ctx_vectors
-
-        self.freeze_soft_att_obj = self.soft_att_obj.detach().clone().cpu()
-        self.freeze_ctx_vectors =  self.ctx_vectors.detach().clone().cpu()
+        self.token_ids_s, self.token_ids_o, self.token_ids_c, self.soft_att_obj, self.ctx_vectors_s, self.ctx_vectors_o, self.ctx_vectors_c = self.construct_soft_prompt()
 
         self.offset = offset
         self.enable_pos_emb = True
@@ -52,6 +46,7 @@ class MYSP(nn.Module):
             self.dtype = dtype
         self.text_encoder = CustomTextEncoder(self.clip, self.dtype)
 
+        #adapter部分还可以继续优化
         if(self.config.adapter_place!="none"):
             self.additional_visual_params = nn.ModuleList([Adapter(1024,4) for i in range(2*self.clip.visual.transformer.layers)])
 
@@ -60,14 +55,21 @@ class MYSP(nn.Module):
                 param.requires_grad_(False)
 
         self.soft_att_obj = nn.Parameter(self.soft_att_obj)
-        self.soft_prompt = nn.Parameter(self.ctx_vectors).cuda()
-        self.fusion = FusionTextImageBlock(config.width_img, config.width_txt, len(self.attributes), len(self.classes),
+        self.soft_prompt_s = nn.Parameter(self.ctx_vectors_s).cuda()
+        self.soft_prompt_o = nn.Parameter(self.ctx_vectors_o).cuda()
+        self.soft_prompt_c = nn.Parameter(self.ctx_vectors_c).cuda()
+        #经过projection后width_img变为width_txt
+        self.fusion = FusionTextImageBlock(config.width_txt, config.width_txt, len(self.attributes), len(self.classes),
                                            config.SA_K, context_length=self.config.context_length,
                                            fusion=self.config.fusion)
         self.weight = config.res_w
 
     def construct_soft_prompt(self):
-        token_ids = clip.tokenize("a photo of x x",
+        token_ids_s = clip.tokenize("a photo of x",
+                                  context_length=self.config.context_length).cuda()
+        token_ids_o = clip.tokenize("a photo of x",
+                                  context_length=self.config.context_length).cuda()
+        token_ids_c = clip.tokenize("a photo of x x",
                                   context_length=self.config.context_length).cuda()
 
         tokenized = torch.cat(
@@ -93,47 +95,67 @@ class MYSP(nn.Module):
         with torch.no_grad():
             embedding = self.clip.token_embedding(prompt)
         ctx_vectors = embedding[0, 1: 1 + n_ctx, :]
-        return token_ids, soft_att_obj, ctx_vectors
+        ctx_vectors_s = ctx_vectors.detach().clone()
+        ctx_vectors_o = ctx_vectors.detach().clone()
+        ctx_vectors_c = ctx_vectors.detach().clone()
+        return token_ids_s, token_ids_o, token_ids_c, soft_att_obj, ctx_vectors_s,  ctx_vectors_o, ctx_vectors_c
 
     def construct_token_tensors(self, pair_idx):
         attr_idx, obj_idx = pair_idx[:, 0], pair_idx[:, 1]
-        class_token_ids = self.token_ids.repeat(len(pair_idx), 1)
 
-        token_tensor = self.clip.token_embedding(
+        state_idx, object_idx = torch.tensor([i for i in range(len(self.attributes))]).cuda(), torch.tensor([i for i in range(len(self.classes))]).cuda()
+
+        state_token_ids = self.token_ids_s.repeat(len(self.attributes), 1)
+        object_token_ids = self.token_ids_o.repeat(len(self.classes), 1)
+        class_token_ids = self.token_ids_c.repeat(len(pair_idx), 1)
+
+        token_tensor_s = self.clip.token_embedding(
+            state_token_ids.cuda()
+        ).type(self.clip.dtype)
+
+        token_tensor_o = self.clip.token_embedding(
+            object_token_ids.cuda()
+        ).type(self.clip.dtype)
+
+        token_tensor_c = self.clip.token_embedding(
             class_token_ids.cuda()
         ).type(self.clip.dtype)
-        soft_att_obj = self.attr_dropout(self.soft_att_obj)
-        eos_idx = int(self.token_ids[0].argmax())
 
-        token_tensor[:, eos_idx - 2, :] = soft_att_obj[
+
+        soft_att_obj = self.attr_dropout(self.soft_att_obj)
+
+        eos_idx_s = int(self.token_ids_s[0].argmax())
+        eos_idx_o = int(self.token_ids_o[0].argmax())
+        eos_idx_c = int(self.token_ids_c[0].argmax())
+
+
+        token_tensor_s[:, eos_idx_s - 1, :] = soft_att_obj[
+           state_idx
+        ].type(self.clip.dtype)
+        token_tensor_s[
+        :, 1: len(self.soft_prompt_s) + 1, :
+        ] = self.soft_prompt_s.type(self.clip.dtype)
+
+
+        token_tensor_o[:, eos_idx_o - 1, :] = soft_att_obj[
+            object_idx + self.offset
+        ].type(self.clip.dtype)
+        token_tensor_o[
+        :, 1: len(self.soft_prompt_o) + 1, :
+        ] = self.soft_prompt_o.type(self.clip.dtype)
+
+
+        token_tensor_c[:, eos_idx_c - 2, :] = soft_att_obj[
             attr_idx
         ].type(self.clip.dtype)
-        token_tensor[:, eos_idx - 1, :] = soft_att_obj[
+        token_tensor_c[:, eos_idx_c - 1, :] = soft_att_obj[
             obj_idx + self.offset
             ].type(self.clip.dtype)
+        token_tensor_c[
+        :, 1: len(self.soft_prompt_c) + 1, :
+        ] = self.soft_prompt_c.type(self.clip.dtype)
 
-        # adding the correct learnable context
-        token_tensor[
-        :, 1: len(self.soft_prompt) + 1, :
-        ] = self.soft_prompt.type(self.clip.dtype)
-
-        token_tensor011 = token_tensor.detach().clone()
-        token_tensor101 = token_tensor.detach().clone()
-        token_tensor110 = token_tensor.detach().clone()
-
-        token_tensor011[
-        :, 1: len(self.soft_prompt) + 1, :
-        ] = self.freeze_ctx_vectors.type(self.clip.dtype)
-
-        token_tensor101[:, eos_idx - 2, :] = self.freeze_soft_att_obj[
-            attr_idx.cpu()
-        ].type(self.clip.dtype)
-
-        token_tensor110[:, eos_idx - 1, :] = self.freeze_soft_att_obj[
-            obj_idx.cpu() + self.offset
-            ].type(self.clip.dtype)
-
-        return token_tensor011, token_tensor101, token_tensor110
+        return token_tensor_s, token_tensor_o, token_tensor_c
 
     def visual(self, x: torch.Tensor):
         x = self.clip.visual.conv1(x)  # shape = [*, width, grid, grid]
@@ -146,8 +168,10 @@ class MYSP(nn.Module):
         x = self.clip.visual.ln_pre(x)
 
         x = x.permute(1, 0, 2)  # NLD -> LND
-        img_feature = self.clip.visual.transformer(x)
 
+        #DFSP version
+        '''
+        img_feature = self.clip.visual.transformer(x)
         x = img_feature.permute(1, 0, 2)  # LND -> NLD
 
         x = self.clip.visual.ln_post(x[:, 0, :])
@@ -155,6 +179,15 @@ class MYSP(nn.Module):
         if self.clip.visual.proj is not None:
             x = x @ self.clip.visual.proj
         return x, img_feature
+        '''
+        #Troika version
+        x = self.clip.visual.transformer(x)
+        img_feature = x.permute(1, 0, 2)  # LND -> NLD
+
+        img_feature = self.clip.visual.ln_post(img_feature)
+        if self.clip.visual.proj is not None:
+            img_feature = img_feature @ self.clip.visual.proj
+        return img_feature[:, 0, :], img_feature
 
     def encode_image_with_adapter(self, x: torch.Tensor):
         # self.clip is the CLIP model
@@ -257,128 +290,63 @@ class MYSP(nn.Module):
         else:
             batch_img, img_ft = self.encode_image_with_adapter(batch_img.type(self.clip.dtype))  ## bs * 768
         
-        token_tensor011, token_tensor101, token_tensor110 = self.construct_token_tensors(idx)
+        token_tensor_s, token_tensor_o, token_tensor_c = self.construct_token_tensors(idx)
 
-        text_feature011, text_ft011 = self.text_encoder(
-            self.token_ids,
-            token_tensor011,
+        text_feature_s, text_ft_s = self.text_encoder(
+            self.token_ids_s,
+            token_tensor_s,
             enable_pos_emb=self.enable_pos_emb,
         )
-        text_feature101, text_ft101 = self.text_encoder(
-            self.token_ids,
-            token_tensor101,
+        text_feature_o, text_ft_o = self.text_encoder(
+            self.token_ids_o,
+            token_tensor_o,
             enable_pos_emb=self.enable_pos_emb,
         )
-        text_feature110, text_ft110 = self.text_encoder(
-            self.token_ids,
-            token_tensor110,
+        text_feature_c, text_ft_c = self.text_encoder(
+            self.token_ids_c,
+            token_tensor_c,
             enable_pos_emb=self.enable_pos_emb,
         )
 
 
-        
-        img_ft011, text_ft011 = self.fusion(img_ft.type(torch.float), text_ft011.type(torch.float), idx, b)
-        img_ft011, text_ft011 = self.ft_to_logit(img_ft011.type(self.clip.dtype), text_ft011.type(self.clip.dtype))
-        
-        img_ft101, text_ft101 = self.fusion(img_ft.type(torch.float), text_ft101.type(torch.float), idx, b)
-        img_ft101, text_ft101 = self.ft_to_logit(img_ft101.type(self.clip.dtype), text_ft101.type(self.clip.dtype))
-        
-        img_ft110, text_ft110 = self.fusion(img_ft.type(torch.float), text_ft110.type(torch.float), idx, b)
-        img_ft110, text_ft110 = self.ft_to_logit(img_ft110.type(self.clip.dtype), text_ft110.type(self.clip.dtype))
+        img_ft, text_ft_c = self.fusion(img_ft.type(torch.float), text_ft_s.type(torch.float), text_ft_o.type(torch.float), text_ft_c.type(torch.float), idx, b)
+
+        img_ft = img_ft[:, 0, :]
+        text_ft_c = text_ft_c[torch.arange(text_ft_c.shape[0]), token_ids.argmax(dim=-1)]
 
 
 
-
-        batch_img011 = self.weight * batch_img + (1 - self.weight) * img_ft011
-        normalized_img011 = batch_img011 / batch_img011.norm(dim=-1, keepdim=True)
-        text_feature011 = self.weight * text_feature011 + (1 - self.weight) * text_ft011
-        idx_text_feature011 = text_feature011 / text_feature011.norm(
-            dim=-1, keepdim=True
-        )
-
-        batch_img101 = self.weight * batch_img + (1 - self.weight) * img_ft101
-        normalized_img101 = batch_img101 / batch_img101.norm(dim=-1, keepdim=True)
-        text_feature101 = self.weight * text_feature101 + (1 - self.weight) * text_ft101
-        idx_text_feature101 = text_feature101 / text_feature101.norm(
-            dim=-1, keepdim=True
-        )
-
-        batch_img110 = self.weight * batch_img + (1 - self.weight) * img_ft110
-        normalized_img110 = batch_img110 / batch_img110.norm(dim=-1, keepdim=True)
-        text_feature110 = self.weight * text_feature110 + (1 - self.weight) * text_ft110
-        idx_text_feature110 = text_feature110 / text_feature110.norm(
-            dim=-1, keepdim=True
-        )
-
-        logits011 = (
-                    self.clip.logit_scale.exp()
-                    * normalized_img011
-                    @ idx_text_feature011.t()
-            )
-
-        logits101 = (
-                self.clip.logit_scale.exp()
-                * normalized_img101
-                @ idx_text_feature101.t()
-        )
-
-        logits110 = (
-                self.clip.logit_scale.exp()
-                * normalized_img110
-                @ idx_text_feature110.t()
-        )
-
-        #logits = (logits011+logits101+logits110)/3
-
-        logits_att011, logits_obj011 = self.decompose_logits(logits011, idx)
-        logits_att101, logits_obj101 = self.decompose_logits(logits101, idx)
-        logits_att110, logits_obj110 = self.decompose_logits(logits110, idx)
-
-        prob011=stable_softmax(logits011)
-        prob101=stable_softmax(logits101)
-        prob110=stable_softmax(logits110)
-
-        prob_att011=stable_softmax(logits_att011)
-        prob_att101=stable_softmax(logits_att101)
-        prob_att110=stable_softmax(logits_att110)
-
-        prob_obj011=stable_softmax(logits_obj011)
-        prob_obj101=stable_softmax(logits_obj101)
-        prob_obj110=stable_softmax(logits_obj110)
-
-        prob=(prob011+prob101+prob110)/3
-        prob_att=(prob_att011+prob_att101+prob_att110)/3
-        prob_obj=(prob_obj011+prob_obj101+prob_obj110)/3
-        #print(torch.sum(prob, dim=1))
-
-
-        #测试只用训练部分进行测试，还需要修改三个返回值中的prob变为my_prob，还需要修改construct_token_tensors返回全部训练部分
-        '''
-        text_feature, text_ft = self.text_encoder(
-            self.token_ids,
-            token_tensor,
-            enable_pos_emb=self.enable_pos_emb,
-        )
-        img_ft, text_ft = self.fusion(img_ft.type(torch.float), text_ft.type(torch.float), idx, b)
-        img_ft, text_ft = self.ft_to_logit(img_ft.type(self.clip.dtype), text_ft.type(self.clip.dtype))
-        img_ft = self.adapter(img_ft.type(torch.float)).type(self.clip.dtype)
         batch_img = self.weight * batch_img + (1 - self.weight) * img_ft
         normalized_img = batch_img / batch_img.norm(dim=-1, keepdim=True)
-        text_feature = self.weight * text_feature + (1 - self.weight) * text_ft
-        idx_text_feature = text_feature / text_feature.norm(
-            dim=-1, keepdim=True
-        )
-        logits = (
+        text_feature_c = self.weight * text_feature_c + (1 - self.weight) * text_ft_c
+        idx_text_feature_c = text_feature_c / text_feature_c.norm(dim=-1, keepdim=True)
+
+        idx_text_feature_s = text_feature_s / text_feature_s.norm(dim=-1, keepdim=True)
+
+        idx_text_feature_o = text_feature_o / text_feature_o.norm(dim=-1, keepdim=True)
+
+        
+        logits_c = (
                     self.clip.logit_scale.exp()
                     * normalized_img
-                    @ idx_text_feature.t()
+                    @ idx_text_feature_c.t()
             )
-        logits_att, logits_obj = self.decompose_logits(logits, idx)
-        my_prob=stable_softmax(logits)
-        my_prob_att=stable_softmax(logits_att)
-        my_prob_obj=stable_softmax(logits_obj)
-    
-        '''
+        logits_s = (
+                        self.clip.logit_scale.exp()
+                        * normalized_img
+                        @ idx_text_feature_s.t()
+                )
+        logits_o = (
+                        self.clip.logit_scale.exp()
+                        * normalized_img
+                        @ idx_text_feature_o.t()
+                )
 
-        return (prob+1e-7, prob_att+1e-7, prob_obj+1e-7)
+
+        logits_c2s, logits_c2o = self.decompose_logits(logits_c, idx)
+
+
+
+
+        return (logits_c, logits_c2s, logits_c2o,  logits_s, logits_o)
 

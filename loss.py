@@ -3,24 +3,20 @@ import torch.nn as nn
 import torch
 
 def loss_calu(predict, target, config):
-    #loss_fn = CrossEntropyLoss()
-    loss_fn = nn.NLLLoss()
+    loss_fn = CrossEntropyLoss()
     batch_img, batch_attr, batch_obj, batch_target = target
     batch_attr = batch_attr.cuda()
     batch_obj = batch_obj.cuda()
     batch_target = batch_target.cuda()
+    logits_c, logits_c2s, logits_c2o, logits_s, logits_o = predict
+    loss_logit_df = loss_fn(logits_c, batch_target)
 
-    #logits, logits_att, logits_obj, logits_soft_prompt = predict
-    #loss_logit_df = loss_fn(logits, batch_target)
-    #loss_logit_sp = loss_fn(logits_soft_prompt, batch_target)
-    #loss_att = loss_fn(logits_att, batch_attr)
-    #loss_obj = loss_fn(logits_obj, batch_obj)
-    #loss = loss_logit_df + config.att_obj_w * (loss_att + loss_obj) + config.sp_w * loss_logit_sp
+    loss_c2s = loss_fn(logits_c2s, batch_attr)
+    loss_c2o = loss_fn(logits_c2o, batch_obj)
 
-    prob, prob_att, prob_obj = predict
-    loss_logit_df = loss_fn(torch.log(prob), batch_target)
-    loss_att = loss_fn(torch.log(prob_att), batch_attr)
-    loss_obj = loss_fn(torch.log(prob_obj), batch_obj)
-    loss = loss_logit_df + config.att_obj_w * (loss_att + loss_obj)
+    loss_s = loss_fn(logits_c2s, batch_attr)
+    loss_o = loss_fn(logits_c2o, batch_obj)
+
+    loss = loss_logit_df + config.com2_att_obj_w * (loss_c2s + loss_c2o) + config.att_obj_w * (loss_s + loss_o)
 
     return loss
