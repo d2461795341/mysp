@@ -574,7 +574,7 @@ if __name__ == "__main__":
         val_stats = None
         with torch.no_grad():
             all_logits, all_attr_gt, all_obj_gt, all_pair_gt, loss_avg = predict_logits(
-                model, val_dataset, device, config)
+                model, val_dataset, config)
             for th in thresholds:
                 temp_logits = threshold_with_feasibility(
                     all_logits, val_dataset.seen_mask, threshold=th, feasiblity=unseen_scores)
