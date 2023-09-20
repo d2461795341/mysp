@@ -319,6 +319,9 @@ class MYSP(nn.Module):
         text_ft_c = text_ft_c[torch.arange(text_ft_c.shape[0]), self.token_ids_c.argmax(dim=-1)]
 
 
+        batch_img_soft_prompt = batch_img / batch_img.norm(dim=-1, keepdim=True)
+        text_features_soft_prompt = text_feature_c / text_feature_c.norm(dim=-1, keepdim=True)
+
 
         batch_img = self.weight * batch_img + (1 - self.weight) * img_ft
         normalized_img = batch_img / batch_img.norm(dim=-1, keepdim=True)
@@ -330,7 +333,7 @@ class MYSP(nn.Module):
         idx_text_feature_o = text_feature_o / text_feature_o.norm(dim=-1, keepdim=True)
         idx_text_feature_o = idx_text_feature_o.type(torch.float)
 
-        
+
         logits_c = (
                     self.clip.logit_scale.exp()
                     * normalized_img
@@ -346,6 +349,11 @@ class MYSP(nn.Module):
                         * normalized_img
                         @ idx_text_feature_o.t()
                 )
+        logits_soft_prompt = (
+            self.clip.logit_scale.exp()
+            * batch_img_soft_prompt
+            @ text_features_soft_prompt.t()
+        )     
 
 
         logits_c2s, logits_c2o = self.decompose_logits(logits_c, idx)
@@ -353,5 +361,5 @@ class MYSP(nn.Module):
 
 
 
-        return (logits_c, logits_c2s, logits_c2o,  logits_s, logits_o)
+        return (logits_c, logits_c2s, logits_c2o,  logits_s, logits_o, logits_soft_prompt)
 
