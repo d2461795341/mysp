@@ -11,7 +11,7 @@ def loss_calu(predict, target, config):
     logits_c, logits_c2s, logits_c2o, logits_s, logits_o, logits_soft_prompt = predict
     loss_logit_df = loss_fn(logits_c, batch_target)
 
-    loss_logit_sp = loss_fnp(logits_soft_prompt, batch_target)
+    loss_logit_sp = loss_fn(logits_soft_prompt, batch_target)
 
     loss_c2s = loss_fn(logits_c2s, batch_attr)
     loss_c2o = loss_fn(logits_c2o, batch_obj)

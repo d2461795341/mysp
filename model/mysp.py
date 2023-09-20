@@ -332,13 +332,14 @@ class MYSP(nn.Module):
         idx_text_feature_s = idx_text_feature_s.type(torch.float)
         idx_text_feature_o = text_feature_o / text_feature_o.norm(dim=-1, keepdim=True)
         idx_text_feature_o = idx_text_feature_o.type(torch.float)
-
+        
 
         logits_c = (
                     self.clip.logit_scale.exp()
                     * normalized_img
                     @ idx_text_feature_c.t()
             )
+        
         logits_s = (
                         self.clip.logit_scale.exp()
                         * normalized_img
@@ -349,6 +350,7 @@ class MYSP(nn.Module):
                         * normalized_img
                         @ idx_text_feature_o.t()
                 )
+        
         logits_soft_prompt = (
             self.clip.logit_scale.exp()
             * batch_img_soft_prompt
