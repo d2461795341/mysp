@@ -35,7 +35,8 @@ class MYSP(nn.Module):
         self.attributes = attributes
         self.classes = classes
         self.attr_dropout = nn.Dropout(config.attr_dropout)
-        self.token_ids_s, self.token_ids_o, self.token_ids_c, self.soft_att_obj, self.ctx_vectors_s, self.ctx_vectors_o, self.ctx_vectors_c = self.construct_soft_prompt()
+        self.attr_dropout_m = nn.Dropout(config.attr_dropout_m)
+        self.token_ids_s, self.token_ids_o, self.token_ids_c, self.soft_att_obj, self.soft_att_obj_m, self.ctx_vectors_s, self.ctx_vectors_o, self.ctx_vectors_c = self.construct_soft_prompt()
 
         self.offset = offset
         self.enable_pos_emb = True
@@ -55,6 +56,7 @@ class MYSP(nn.Module):
                 param.requires_grad_(False)
 
         self.soft_att_obj = nn.Parameter(self.soft_att_obj)
+        self.soft_att_obj_m = nn.Parameter(self.soft_att_obj_m)
         self.soft_prompt_s = nn.Parameter(self.ctx_vectors_s).cuda()
         self.soft_prompt_o = nn.Parameter(self.ctx_vectors_o).cuda()
         self.soft_prompt_c = nn.Parameter(self.ctx_vectors_c).cuda()
@@ -88,6 +90,8 @@ class MYSP(nn.Module):
             eos_idx = tokenized[idx].argmax()
             soft_att_obj[idx, :] = torch.mean(rep[1:eos_idx, :], axis=0)
 
+        soft_att_obj_m =  soft_att_obj.detach().clone()
+
         ctx_init = "a photo of "
         n_ctx = len(ctx_init.split())
         prompt = clip.tokenize(ctx_init,
@@ -98,7 +102,7 @@ class MYSP(nn.Module):
         ctx_vectors_s = ctx_vectors.detach().clone()
         ctx_vectors_o = ctx_vectors.detach().clone()
         ctx_vectors_c = ctx_vectors.detach().clone()
-        return token_ids_s, token_ids_o, token_ids_c, soft_att_obj, ctx_vectors_s,  ctx_vectors_o, ctx_vectors_c
+        return token_ids_s, token_ids_o, token_ids_c, soft_att_obj, soft_att_obj_m, ctx_vectors_s,  ctx_vectors_o, ctx_vectors_c
 
     def construct_token_tensors(self, pair_idx):
         attr_idx, obj_idx = pair_idx[:, 0], pair_idx[:, 1]
@@ -124,12 +128,14 @@ class MYSP(nn.Module):
 
         soft_att_obj = self.attr_dropout(self.soft_att_obj)
 
+        soft_att_obj_m = self.attr_dropout_m(self.soft_att_obj_m)
+
         eos_idx_s = int(self.token_ids_s[0].argmax())
         eos_idx_o = int(self.token_ids_o[0].argmax())
         eos_idx_c = int(self.token_ids_c[0].argmax())
 
 
-        token_tensor_s[:, eos_idx_s - 1, :] = soft_att_obj[
+        token_tensor_s[:, eos_idx_s - 1, :] = soft_att_obj_m[
            state_idx
         ].type(self.clip.dtype)
         token_tensor_s[
@@ -137,7 +143,7 @@ class MYSP(nn.Module):
         ] = self.soft_prompt_s.type(self.clip.dtype)
 
 
-        token_tensor_o[:, eos_idx_o - 1, :] = soft_att_obj[
+        token_tensor_o[:, eos_idx_o - 1, :] = soft_att_obj_m[
             object_idx + self.offset
         ].type(self.clip.dtype)
         token_tensor_o[
@@ -328,11 +334,6 @@ class MYSP(nn.Module):
         text_feature_c = self.weight * text_feature_c + (1 - self.weight) * text_ft_c
         idx_text_feature_c = text_feature_c / text_feature_c.norm(dim=-1, keepdim=True)
 
-        idx_text_feature_s = text_feature_s / text_feature_s.norm(dim=-1, keepdim=True)
-        idx_text_feature_s = idx_text_feature_s.type(torch.float)
-        idx_text_feature_o = text_feature_o / text_feature_o.norm(dim=-1, keepdim=True)
-        idx_text_feature_o = idx_text_feature_o.type(torch.float)
-        
 
         logits_c = (
                     self.clip.logit_scale.exp()
@@ -340,16 +341,6 @@ class MYSP(nn.Module):
                     @ idx_text_feature_c.t()
             )
         
-        logits_s = (
-                        self.clip.logit_scale.exp()
-                        * normalized_img
-                        @ idx_text_feature_s.t()
-                )
-        logits_o = (
-                        self.clip.logit_scale.exp()
-                        * normalized_img
-                        @ idx_text_feature_o.t()
-                )
         
         logits_soft_prompt = (
             self.clip.logit_scale.exp()
@@ -363,5 +354,5 @@ class MYSP(nn.Module):
 
 
 
-        return (logits_c, logits_c2s, logits_c2o,  logits_s, logits_o, logits_soft_prompt)
+        return (logits_c, logits_c2s, logits_c2o, logits_soft_prompt)
 

@@ -22,8 +22,9 @@ parser.add_argument("--eval_batch_size", help="eval batch size", default=16, typ
 parser.add_argument("--fusion", default="BiFusion", help="cross modal fusion method, choices = [BiFusion, txt2img, img2txt, NoFusion, DeCom]",)
 parser.add_argument("--context_length", help="sets the context length of the clip model", default=8, type=int)
 parser.add_argument("--attr_dropout", help="add dropout to attributes", type=float, default=0.3)
+parser.add_argument("--attr_dropout_m", help="add dropout to attributes", type=float, default=0.6)
 parser.add_argument("--save_path", help="save path", type=str)
-parser.add_argument("--save_every_n", default=1, type=int, help="saves the model every n epochs")
+parser.add_argument("--save_every_n", default=5, type=int, help="saves the model every n epochs")
 parser.add_argument("--save_model", help="indicate if you want to save the model state dict()", action="store_true")
 parser.add_argument("--load_model", default=None, help="load the trained model")
 parser.add_argument("--seed", help="seed value", default=0, type=int)
@@ -36,5 +37,5 @@ parser.add_argument("--text_encoder_batch_size", help="batch size of the text en
 parser.add_argument('--threshold', type=float, help="optional threshold")
 parser.add_argument('--threshold_trials', type=int, default=50, help="how many threshold values to try")
 
-parser.add_argument('--adapter_place', type=str, default='all', help="whether to use adapter and where to put it, choices = [none, attn, ffn, all]")
+parser.add_argument('--adapter_place', type=str, default='none', help="whether to use adapter and where to put it, choices = [none, attn, ffn, all]")
 parser.add_argument('--adapter_option', type=str, default='parallel', help="choices = [parallel, sequential]")

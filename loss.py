@@ -8,7 +8,7 @@ def loss_calu(predict, target, config):
     batch_attr = batch_attr.cuda()
     batch_obj = batch_obj.cuda()
     batch_target = batch_target.cuda()
-    logits_c, logits_c2s, logits_c2o, logits_s, logits_o, logits_soft_prompt = predict
+    logits_c, logits_c2s, logits_c2o, logits_soft_prompt = predict
     loss_logit_df = loss_fn(logits_c, batch_target)
 
     loss_logit_sp = loss_fn(logits_soft_prompt, batch_target)
@@ -16,9 +16,6 @@ def loss_calu(predict, target, config):
     loss_c2s = loss_fn(logits_c2s, batch_attr)
     loss_c2o = loss_fn(logits_c2o, batch_obj)
 
-    loss_s = loss_fn(logits_s, batch_attr)
-    loss_o = loss_fn(logits_o, batch_obj)
-
-    loss = loss_logit_df + config.com2_att_obj_w * (loss_c2s + loss_c2o) + config.att_obj_w * (loss_s + loss_o) + config.sp_w * loss_logit_sp
+    loss = loss_logit_df + config.com2_att_obj_w * (loss_c2s + loss_c2o) + config.sp_w * loss_logit_sp
 
     return loss

@@ -24,7 +24,7 @@ train:
   load_model: False
   best_model_metric: best_unseen     #best_unseen  best_seen AUC best_loss best_hm
   com2_att_obj_w: 0.01
-  att_obj_w: 0.1
+  sp_w : 0.1
 
 test:
   eval_batch_size: 128
