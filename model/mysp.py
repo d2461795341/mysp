@@ -267,7 +267,7 @@ class MYSP(nn.Module):
             txt_feature = self.text_encoder.ln_final(txt_feature)
             txt_tf = (
                     txt_feature[
-                        torch.arange(txt_feature.shape[0]), self.token_ids.argmax(dim=-1)
+                        torch.arange(txt_feature.shape[0]), self.token_ids_c.argmax(dim=-1)
                     ]  # POS of <EOS>
                     @ self.text_encoder.text_projection
             )
