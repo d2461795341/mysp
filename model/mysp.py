@@ -36,7 +36,7 @@ class MYSP(nn.Module):
         self.classes = classes
         self.attr_dropout = nn.Dropout(config.attr_dropout)
         self.attr_dropout_m = nn.Dropout(config.attr_dropout_m)
-        self.token_ids_s, self.token_ids_o, self.token_ids_c, self.soft_att_obj, self.soft_att_obj_m, self.ctx_vectors_s, self.ctx_vectors_o, self.ctx_vectors_c = self.construct_soft_prompt()
+        self.token_ids_s, self.token_ids_o, self.token_ids_c, self.soft_att_obj, self.ctx_vectors_s, self.ctx_vectors_o, self.ctx_vectors_c = self.construct_soft_prompt()
 
         self.offset = offset
         self.enable_pos_emb = True
@@ -56,12 +56,11 @@ class MYSP(nn.Module):
                 param.requires_grad_(False)
 
         self.soft_att_obj = nn.Parameter(self.soft_att_obj)
-        self.soft_att_obj_m = nn.Parameter(self.soft_att_obj_m)
         self.soft_prompt_s = nn.Parameter(self.ctx_vectors_s).cuda()
         self.soft_prompt_o = nn.Parameter(self.ctx_vectors_o).cuda()
         self.soft_prompt_c = nn.Parameter(self.ctx_vectors_c).cuda()
         #经过projection后width_img变为width_txt
-        self.fusion = FusionTextImageBlock(config.width_txt, config.width_txt, len(self.attributes), len(self.classes),
+        self.fusion = FusionTextImageBlock(config.width_img, config.width_txt, len(self.attributes), len(self.classes),
                                            config.SA_K, context_length=self.config.context_length,
                                            fusion=self.config.fusion)
         self.weight = config.res_w
@@ -90,8 +89,6 @@ class MYSP(nn.Module):
             eos_idx = tokenized[idx].argmax()
             soft_att_obj[idx, :] = torch.mean(rep[1:eos_idx, :], axis=0)
 
-        soft_att_obj_m =  soft_att_obj.detach().clone()
-
         ctx_init = "a photo of "
         n_ctx = len(ctx_init.split())
         prompt = clip.tokenize(ctx_init,
@@ -102,7 +99,7 @@ class MYSP(nn.Module):
         ctx_vectors_s = ctx_vectors.detach().clone()
         ctx_vectors_o = ctx_vectors.detach().clone()
         ctx_vectors_c = ctx_vectors.detach().clone()
-        return token_ids_s, token_ids_o, token_ids_c, soft_att_obj, soft_att_obj_m, ctx_vectors_s,  ctx_vectors_o, ctx_vectors_c
+        return token_ids_s, token_ids_o, token_ids_c, soft_att_obj, ctx_vectors_s,  ctx_vectors_o, ctx_vectors_c
 
     def construct_token_tensors(self, pair_idx):
         attr_idx, obj_idx = pair_idx[:, 0], pair_idx[:, 1]
@@ -128,14 +125,11 @@ class MYSP(nn.Module):
 
         soft_att_obj = self.attr_dropout(self.soft_att_obj)
 
-        soft_att_obj_m = self.attr_dropout_m(self.soft_att_obj_m)
-
         eos_idx_s = int(self.token_ids_s[0].argmax())
         eos_idx_o = int(self.token_ids_o[0].argmax())
         eos_idx_c = int(self.token_ids_c[0].argmax())
 
-
-        token_tensor_s[:, eos_idx_s - 1, :] = soft_att_obj_m[
+        token_tensor_s[:, eos_idx_s - 1, :] = soft_att_obj[
            state_idx
         ].type(self.clip.dtype)
         token_tensor_s[
@@ -143,7 +137,7 @@ class MYSP(nn.Module):
         ] = self.soft_prompt_s.type(self.clip.dtype)
 
 
-        token_tensor_o[:, eos_idx_o - 1, :] = soft_att_obj_m[
+        token_tensor_o[:, eos_idx_o - 1, :] = soft_att_obj[
             object_idx + self.offset
         ].type(self.clip.dtype)
         token_tensor_o[
@@ -176,7 +170,7 @@ class MYSP(nn.Module):
         x = x.permute(1, 0, 2)  # NLD -> LND
 
         #DFSP version
-        '''
+        
         img_feature = self.clip.visual.transformer(x)
         x = img_feature.permute(1, 0, 2)  # LND -> NLD
 
@@ -185,8 +179,9 @@ class MYSP(nn.Module):
         if self.clip.visual.proj is not None:
             x = x @ self.clip.visual.proj
         return x, img_feature
-        '''
+        
         #Troika version
+        '''
         x = self.clip.visual.transformer(x)
         img_feature = x.permute(1, 0, 2)  # LND -> NLD
 
@@ -194,6 +189,7 @@ class MYSP(nn.Module):
         if self.clip.visual.proj is not None:
             img_feature = img_feature @ self.clip.visual.proj
         return img_feature[:, 0, :], img_feature
+        '''
 
     def encode_image_with_adapter(self, x: torch.Tensor):
         # self.clip is the CLIP model
@@ -315,14 +311,10 @@ class MYSP(nn.Module):
         )
 
 
-        img_ft, text_ft_c = self.fusion(img_ft.type(torch.float).permute(1, 0, 2), text_ft_s.type(torch.float).permute(1, 0, 2), text_ft_o.type(torch.float).permute(1, 0, 2), text_ft_c.type(torch.float).permute(1, 0, 2), idx, b)
-
-        img_ft = img_ft.permute(1, 0, 2)
-        text_ft_c = text_ft_c.permute(1, 0, 2)
+        img_ft, text_ft_c = self.fusion(img_ft.type(torch.float), text_ft_s.type(torch.float), text_ft_o.type(torch.float), text_ft_c.type(torch.float), idx, b)
         
 
-        img_ft = img_ft[:, 0, :]
-        text_ft_c = text_ft_c[torch.arange(text_ft_c.shape[0]), self.token_ids_c.argmax(dim=-1)]
+        img_ft, text_ft_c = self.ft_to_logit(img_ft.type(self.clip.dtype), text_ft_c.type(self.clip.dtype))
 
 
         batch_img_soft_prompt = batch_img / batch_img.norm(dim=-1, keepdim=True)

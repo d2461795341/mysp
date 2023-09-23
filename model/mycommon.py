@@ -57,8 +57,9 @@ class CustomTextEncoder(torch.nn.Module):
             else text_features
         )
         x = x.permute(1, 0, 2)
+
         #DFSP version
-        '''
+        
         text_feature = self.transformer(x)
 
 
@@ -75,14 +76,16 @@ class CustomTextEncoder(torch.nn.Module):
         )
 
         return tf, text_feature
-        '''
+        
         #Troika version
+        '''
         x = self.transformer(x)
         text_feature = x.permute(1, 0, 2)
         text_feature = self.ln_final(text_feature)
         text_feature = text_feature  @ self.text_projection
         tf = text_feature[torch.arange(text_feature.shape[0]), token_ids.argmax(dim=-1)]  # POS of <EOS> 
         return  tf, text_feature
+        '''
 
        
 
@@ -202,7 +205,8 @@ class FusionTextImageBlock(nn.Module):
         self.context_length = context_length
         self.attributes = attributes
         self.classes = classes
-        self.state_object2img_transform_layer = nn.Linear(context_length * (attributes + classes), 257)
+        self.state_object2img_transform_layer1 = nn.Linear(width_txt, width_img)
+        self.state_object2img_transform_layer2 = nn.Linear(context_length * (attributes + classes), 257)
         self.dropout = nn.Dropout(0.3)
         self.crossblock_img = CrossResidualAttentionBlock(width_img, width_img//64, attn_mask)
         self.crossblock_txt = CrossResidualAttentionBlock(width_txt, width_txt//64, attn_mask)
@@ -234,8 +238,9 @@ class FusionTextImageBlock(nn.Module):
         
 
     def state_object2img(self, x:torch.Tensor, idx, b: int):
+        x = self.state_object2img_transform_layer1(x)
         x = rearrange(x, 't l c -> c (t l)')
-        x = self.state_object2img_transform_layer(x) 
+        x = self.state_object2img_transform_layer2(x) 
         x = self.dropout(x)
         x = x.permute(1,0).unsqueeze(1).repeat(1,b,1)
         return x
