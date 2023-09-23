@@ -325,11 +325,24 @@ class MYSP(nn.Module):
         text_feature_c = self.weight * text_feature_c + (1 - self.weight) * text_ft_c
         idx_text_feature_c = text_feature_c / text_feature_c.norm(dim=-1, keepdim=True)
 
+        idx_text_feature_s = text_feature_s / text_feature_s.norm(dim=-1, keepdim=True)
+        idx_text_feature_o = text_feature_o / text_feature_o.norm(dim=-1, keepdim=True)
 
         logits_c = (
                     self.clip.logit_scale.exp()
                     * normalized_img
                     @ idx_text_feature_c.t()
+            )
+        
+        logits_s = (
+                    self.clip.logit_scale.exp()
+                    * batch_img_soft_prompt
+                    @ idx_text_feature_s.t()
+            )
+        logits_o = (
+                    self.clip.logit_scale.exp()
+                    * batch_img_soft_prompt
+                    @ idx_text_feature_o.t()
             )
         
         
@@ -343,7 +356,5 @@ class MYSP(nn.Module):
         logits_c2s, logits_c2o = self.decompose_logits(logits_c, idx)
 
 
-
-
-        return (logits_c, logits_c2s, logits_c2o, logits_soft_prompt)
+        return (logits_c, logits_c2s, logits_c2o, logits_s, logits_o, logits_soft_prompt)
 

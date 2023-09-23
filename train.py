@@ -90,19 +90,21 @@ def train_model(model, optimizer, config, train_dataset, val_dataset, test_datas
         if config.best_model_metric == "best_loss":
             if loss_avg.cpu().float() < best_loss:
                 best_loss = loss_avg.cpu().float()
-                print("Evaluating test dataset:")
-                evaluate(model, test_dataset)
+                #print("Evaluating test dataset:")
+                #evaluate(model, test_dataset)
                 torch.save(model.state_dict(), os.path.join(
                 config.save_path, f"{config.fusion}_best.pt"
             ))
         else:
             if val_result[config.best_model_metric] > best_metric:
                 best_metric = val_result[config.best_model_metric]
-                print("Evaluating test dataset:")
-                evaluate(model, test_dataset)
+                #print("Evaluating test dataset:")
+                #evaluate(model, test_dataset)
                 torch.save(model.state_dict(), os.path.join(
                 config.save_path, f"{config.fusion}_best.pt"
             ))
+        print("Evaluating test dataset:")
+        evaluate(model, test_dataset)
         if i + 1 == config.epochs:
             print("Evaluating test dataset on Closed World")
             model.load_state_dict(torch.load(os.path.join(
