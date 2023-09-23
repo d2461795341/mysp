@@ -35,7 +35,6 @@ class MYSP(nn.Module):
         self.attributes = attributes
         self.classes = classes
         self.attr_dropout = nn.Dropout(config.attr_dropout)
-        self.attr_dropout_m = nn.Dropout(config.attr_dropout_m)
         self.token_ids_s, self.token_ids_o, self.token_ids_c, self.soft_att_obj, self.ctx_vectors_s, self.ctx_vectors_o, self.ctx_vectors_c = self.construct_soft_prompt()
 
         self.offset = offset

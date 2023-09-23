@@ -22,7 +22,6 @@ parser.add_argument("--eval_batch_size", help="eval batch size", default=16, typ
 parser.add_argument("--fusion", default="BiFusion", help="cross modal fusion method, choices = [BiFusion, txt2img, img2txt, NoFusion, DeCom]",)
 parser.add_argument("--context_length", help="sets the context length of the clip model", default=8, type=int)
 parser.add_argument("--attr_dropout", help="add dropout to attributes", type=float, default=0.3)
-parser.add_argument("--attr_dropout_m", help="add dropout to attributes", type=float, default=0.6)
 parser.add_argument("--save_path", help="save path", type=str)
 parser.add_argument("--save_every_n", default=5, type=int, help="saves the model every n epochs")
 parser.add_argument("--save_model", help="indicate if you want to save the model state dict()", action="store_true")
