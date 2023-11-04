@@ -8,7 +8,6 @@ model:
   width_img: 1024
   width_txt: 768
 
-
 train:
   dataset: ut-zappos
   dataset_path: "./data/ut-zappos"
@@ -24,9 +23,9 @@ train:
   save_path: ../drive/MyDrive/mysp_result/ut-zappos
   best_model_metric: best_loss     #best_unseen  best_seen AUC best_loss best_hm
   load_model: False     # False or model path
-  com2_att_obj_w: 0.001
+  com2_att_obj_w: 0
   att_obj_w: 0.01
-  sp_w : 0.1
+  sp_w : 0
 
 test:
   eval_batch_size: 32

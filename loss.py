@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch
 
 def loss_calu(predict, target, config):
+
     loss_fn = CrossEntropyLoss()
     batch_img, batch_attr, batch_obj, batch_target = target
     batch_attr = batch_attr.cuda()
@@ -15,10 +16,10 @@ def loss_calu(predict, target, config):
 
     loss_c2s = loss_fn(logits_c2s, batch_attr)
     loss_c2o = loss_fn(logits_c2o, batch_obj)
-
+    
     loss_s = loss_fn(logits_s, batch_attr)
     loss_o = loss_fn(logits_o, batch_obj)
 
-    loss = loss_logit_df + config.com2_att_obj_w * (loss_c2s + loss_c2o) + config.att_obj_w * (loss_s + loss_o) + config.sp_w * loss_logit_sp
+    loss = loss_logit_df + config.com2_att_obj_w * (loss_c2s + loss_c2o) + config.att_obj_w * (loss_s + loss_o)+ config.sp_w * loss_logit_sp
 
     return loss

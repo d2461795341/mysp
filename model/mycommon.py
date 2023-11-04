@@ -77,6 +77,7 @@ class CustomTextEncoder(torch.nn.Module):
 
         return tf, text_feature
         
+        
         #Troika version
         '''
         x = self.transformer(x)
@@ -86,6 +87,7 @@ class CustomTextEncoder(torch.nn.Module):
         tf = text_feature[torch.arange(text_feature.shape[0]), token_ids.argmax(dim=-1)]  # POS of <EOS> 
         return  tf, text_feature
         '''
+        
 
        
 
@@ -166,6 +168,8 @@ class ResidualAttentionBlock(nn.Module):
     def forward(self, x: torch.Tensor):
         x = x + self.attention(self.ln_1(x))
         x = x + self.mlp(self.ln_2(x))
+        #x = self.attention(self.ln_1(x))
+        #x = self.mlp(self.ln_2(x))
         return x
 
 
@@ -191,6 +195,8 @@ class CrossResidualAttentionBlock(nn.Module):
     def forward(self, x: torch.Tensor, y: torch.Tensor):
         x = x + self.attention(self.ln_x(x), self.ln_y(y))
         x = x + self.mlp(self.ln_2(x))
+        #x = self.attention(self.ln_x(x), self.ln_y(y))
+        #x = self.mlp(self.ln_2(x))
         return x
 
 

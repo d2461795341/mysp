@@ -91,7 +91,7 @@ class CompositionDataset(Dataset):
         self.feat_dim = None
         self.transform = transform_image(phase, imagenet=imagenet)
         self.loader = ImageLoader(self.root + '/images/')
-
+        #去重结果，训练，验证，测试内部已经去重，但是放在一起可能还有重复的，这里的前三项是将训练验证测试的去重结果放在一起再去重
         self.attrs, self.objs, self.pairs, \
                 self.train_pairs, self.val_pairs, \
                 self.test_pairs = self.parse_split()

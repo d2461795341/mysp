@@ -16,14 +16,17 @@ class Adapter(nn.Module):
     def __init__(self, c_in, reduction=4):
         super(Adapter, self).__init__()
         self.fc = nn.Sequential(
-            nn.Linear(c_in, c_in // reduction, bias=False),
+            nn.Linear(c_in, 64, bias=False),
             nn.ReLU(inplace=True),
-            nn.Linear(c_in // reduction, c_in, bias=False),
+            nn.Linear(64, c_in, bias=False),
             nn.ReLU(inplace=True)
         )
-    def forward(self, x):
+    def forward(self, x, add_residual=True):
         orig_type = x.dtype
-        x = self.fc(x.type(torch.float32))
+        if(add_residual):
+            x = x + self.fc(x.type(torch.float32))
+        else:
+            x = self.fc(x.type(torch.float32))
         return x.type(orig_type)
 
 class MYSP(nn.Module):
@@ -35,7 +38,10 @@ class MYSP(nn.Module):
         self.attributes = attributes
         self.classes = classes
         self.attr_dropout = nn.Dropout(config.attr_dropout)
+        self.attr_dropout_m = nn.Dropout(config.attr_dropout)
         self.token_ids_s, self.token_ids_o, self.token_ids_c, self.soft_att_obj, self.ctx_vectors_s, self.ctx_vectors_o, self.ctx_vectors_c = self.construct_soft_prompt()
+        #self.visual_vector = torch.full((768,), 0.1)
+        #self.text_vector = torch.full((768,), 0.1)
 
         self.offset = offset
         self.enable_pos_emb = True
@@ -55,9 +61,15 @@ class MYSP(nn.Module):
                 param.requires_grad_(False)
 
         self.soft_att_obj = nn.Parameter(self.soft_att_obj)
-        self.soft_prompt_s = nn.Parameter(self.ctx_vectors_s).cuda()
-        self.soft_prompt_o = nn.Parameter(self.ctx_vectors_o).cuda()
+        #self.soft_prompt_s = nn.Parameter(self.ctx_vectors_s).cuda()
+        #self.soft_prompt_o = nn.Parameter(self.ctx_vectors_o).cuda()
+        self.soft_prompt_s = self.ctx_vectors_s
+        self.soft_prompt_o = self.ctx_vectors_o
         self.soft_prompt_c = nn.Parameter(self.ctx_vectors_c).cuda()
+        
+        #self.visual_vector = nn.Parameter(self.visual_vector)
+        #self.text_vector = nn.Parameter(self.text_vector)
+        
         #经过projection后width_img变为width_txt
         self.fusion = FusionTextImageBlock(config.width_img, config.width_txt, len(self.attributes), len(self.classes),
                                            config.SA_K, context_length=self.config.context_length,
@@ -87,7 +99,7 @@ class MYSP(nn.Module):
         for idx, rep in enumerate(orig_token_embedding):
             eos_idx = tokenized[idx].argmax()
             soft_att_obj[idx, :] = torch.mean(rep[1:eos_idx, :], axis=0)
-
+        
         ctx_init = "a photo of "
         n_ctx = len(ctx_init.split())
         prompt = clip.tokenize(ctx_init,
@@ -200,13 +212,13 @@ class MYSP(nn.Module):
         x = self.clip.visual.ln_pre(x)
 
         x = x.permute(1, 0, 2)  # NLD -> LND
-        
+
         # img_feature = self.clip.visual.transformer(x)
         for i_block in range(self.clip.visual.transformer.layers):
             # add Adapter to self.attention
             if self.config.adapter_place in ['attn', 'all'] and self.config.adapter_option == 'parallel':
                 # self.additional_visual_params is nn.ModuleList that contains Adapters for each layer
-                adapt_x = self.additional_visual_params[i_block](x)
+                adapt_x = self.additional_visual_params[i_block](x, add_residual=False)
             residual = x
             x = self.clip.visual.transformer.resblocks[i_block].attention(
                 self.clip.visual.transformer.resblocks[i_block].ln_1(x)
@@ -225,7 +237,7 @@ class MYSP(nn.Module):
             if self.config.adapter_place == 'all':
                 i_adapter = i_adapter + self.clip.visual.transformer.layers
             if self.config.adapter_place in ['ffn', 'all'] and self.config.adapter_option == 'parallel':
-                adapt_x = self.additional_visual_params[i_adapter](x)
+                adapt_x = self.additional_visual_params[i_adapter](x, add_residual=False)
             residual = x
             x = self.clip.visual.transformer.resblocks[i_block].mlp(
                 self.clip.visual.transformer.resblocks[i_block].ln_2(x)
@@ -244,7 +256,7 @@ class MYSP(nn.Module):
         img_feature = self.clip.visual.ln_post(img_feature)
         if self.clip.visual.proj is not None:
             img_feature = img_feature @ self.clip.visual.proj
-        return img_feature[:, 0, :], img_feature
+        return img_feature[:, 0, :], x
 
     def ft_to_logit(self, img, txt):
         img_feature = img.permute(1, 0, 2)  # LND -> NLD
@@ -314,6 +326,10 @@ class MYSP(nn.Module):
         
 
         img_ft, text_ft_c = self.ft_to_logit(img_ft.type(self.clip.dtype), text_ft_c.type(self.clip.dtype))
+        
+        #img_ft, text_ft_c = img_ft.permute(1, 0, 2), text_ft_c.permute(1, 0, 2)
+        #img_ft = img_ft[:, 0, :]
+        #text_ft_c = text_ft_c[torch.arange(text_ft_c.shape[0]), self.token_ids_c.argmax(dim=-1)]
 
 
         batch_img_soft_prompt = batch_img / batch_img.norm(dim=-1, keepdim=True)
@@ -321,9 +337,13 @@ class MYSP(nn.Module):
 
 
         batch_img = self.weight * batch_img + (1 - self.weight) * img_ft
+        #batch_img =  batch_img +  img_ft * self.visual_vector
         normalized_img = batch_img / batch_img.norm(dim=-1, keepdim=True)
+        
         text_feature_c = self.weight * text_feature_c + (1 - self.weight) * text_ft_c
+        #text_feature_c =  text_feature_c + text_ft_c * self.text_vector
         idx_text_feature_c = text_feature_c / text_feature_c.norm(dim=-1, keepdim=True)
+
 
         idx_text_feature_s = text_feature_s / text_feature_s.norm(dim=-1, keepdim=True)
         idx_text_feature_o = text_feature_o / text_feature_o.norm(dim=-1, keepdim=True)
@@ -333,6 +353,7 @@ class MYSP(nn.Module):
                     * normalized_img
                     @ idx_text_feature_c.t()
             )
+        
         
         logits_s = (
                     self.clip.logit_scale.exp()
