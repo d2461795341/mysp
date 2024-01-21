@@ -425,7 +425,43 @@ def predict_logits(model, dataset, config):
         torch.cat(all_obj_gt).to("cpu"),
         torch.cat(all_pair_gt).to("cpu"),
     )
+    '''
+    print("all_attr_gt")
+    print(all_attr_gt.size())
+    print(all_attr_gt)
+    print("all_obj_gt")
+    print(all_obj_gt.size())
+    print(all_obj_gt)
+    print("all_path")
+    print(all_path)
+    
+    #测试图像路径及对应的标签序号，可以从标签-标签序号查询标签
+    if(len(all_path)==12995 or len(all_path)==2914 or len(all_path)==5098):
+        # 将张量转换为列表
+        all_path_list = all_path
+        all_attr_gt_list = all_attr_gt.tolist()
+        all_obj_gt_list = all_obj_gt.tolist()
+        # 创建一个字典，包含要写入 Excel 表格的数据
+        data = {
+            'Path': all_path_list,
+            'Attribute Ground Truth': all_attr_gt_list,
+            'Object Ground Truth': all_obj_gt_list
+        }
 
+        # 创建一个 DataFrame 对象
+        df = pd.DataFrame(data)
+        
+        # 检查文件是否存在
+        file_path = config.dataset+'_ground_truth.xlsx'
+        file_exists = os.path.isfile(file_path)
+
+        # 如果文件不存在，则将 DataFrame 对象写入 Excel 表格
+        if not file_exists:
+            df.to_excel(file_path, index=False)
+            print("Excel file created.")
+        else:
+            print("Excel file already exists. New data not written.")
+    '''
     return all_logits, all_attr_gt, all_obj_gt, all_pair_gt, loss / len(dataloader)
 
 
@@ -499,7 +535,40 @@ def test(
     results = evaluator.score_model(
         all_pred_dict, all_obj_gt, bias=1e3, topk=1
     )
+    '''
+    print("结果！！！！！！！")
+    print(results['unbiased_closed'][0].size())
+    print(results['unbiased_closed'][0])
+    print(results['unbiased_closed'][1].size())
+    print(results['unbiased_closed'][1])
+    
+    
+    #模型对测试图像的结果 open和closde分开
+    
+    if(results['unbiased_closed'][0].size()==torch.Size([12995, 1]) or results['unbiased_closed'][0].size()==torch.Size([2914, 1]) or results['unbiased_closed'][0].size()==torch.Size([5098, 1])):
+        # 创建要写入 Excel 表格的数据字典
+        data = {
+            'predict_state': results['unbiased_closed'][0].squeeze().tolist(),
+            'predict_object': results['unbiased_closed'][1].squeeze().tolist()
+        }
 
+        # 创建一个 DataFrame 对象
+        df = pd.DataFrame(data)
+
+        # 检查文件是否存在
+        if(config.open_world):
+            file_path = config.dataset+'_open_predict.xlsx'
+        else:
+            file_path = config.dataset+'_closed_predict.xlsx'
+        file_exists = os.path.isfile(file_path)
+
+        # 如果文件不存在，则将 DataFrame 对象写入 Excel 表格
+        if not file_exists:
+            df.to_excel(file_path, index=False)
+            print("Excel file created.")
+        else:
+            print("Excel file already exists. New data not written.")
+    '''
     attr_acc = float(torch.mean(
         (results['unbiased_closed'][0].squeeze(-1) == all_attr_gt).float()))
     obj_acc = float(torch.mean(
