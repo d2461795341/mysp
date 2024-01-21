@@ -388,7 +388,8 @@ def predict_logits(model, dataset, config):
             pair attribute-object labels
     """
     model.eval()
-    all_attr_gt, all_obj_gt, all_pair_gt = (
+    all_attr_gt, all_obj_gt, all_pair_gt, all_path = (
+        [],
         [],
         [],
         [],
@@ -413,13 +414,14 @@ def predict_logits(model, dataset, config):
             predict = model(batch_img, pairs)
             logits = predict[0]
             loss += loss_calu(predict, data, config)
-            attr_truth, obj_truth, pair_truth = data[1], data[2], data[3]
+             #补充了图像路径
+            attr_truth, obj_truth, pair_truth, image_path = data[1], data[2], data[3], data[4]
             logits = logits.cpu()
             all_logits = torch.cat([all_logits, logits], dim=0)
             all_attr_gt.append(attr_truth)
             all_obj_gt.append(obj_truth)
             all_pair_gt.append(pair_truth)
-
+            all_path.extend(image_path)
     all_attr_gt, all_obj_gt, all_pair_gt = (
         torch.cat(all_attr_gt).to("cpu"),
         torch.cat(all_obj_gt).to("cpu"),
