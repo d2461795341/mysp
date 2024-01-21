@@ -109,6 +109,29 @@ class CompositionDataset(Dataset):
 
         self.obj2idx = {obj: idx for idx, obj in enumerate(self.objs)}
         self.attr2idx = {attr: idx for idx, attr in enumerate(self.attrs)}
+        '''
+        data = {
+            'Object Index': list(self.obj2idx.values()),
+            'Object': list(self.obj2idx.keys()),
+        }
+
+        # 创建DataFrame
+        df = pd.DataFrame(data)
+
+        # 保存DataFrame为Excel文件
+        df.to_excel('./objects.xlsx', index=False)
+        
+        data = {
+            'State Index': list(self.attr2idx.values()),
+            'State': list(self.attr2idx.keys()),
+        }
+
+        # 创建DataFrame
+        df = pd.DataFrame(data)
+
+        # 保存DataFrame为Excel文件
+        df.to_excel('./states.xlsx', index=False)
+        '''
         self.pair2idx = {pair: idx for idx, pair in enumerate(self.pairs)}
 
         print('# train pairs: %d | # val pairs: %d | # test pairs: %d' % (len(
