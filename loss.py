@@ -5,7 +5,7 @@ import torch
 def loss_calu(predict, target, config):
 
     loss_fn = CrossEntropyLoss()
-    batch_img, batch_attr, batch_obj, batch_target = target
+    batch_img, batch_attr, batch_obj, batch_target,batch_path = target
     batch_attr = batch_attr.cuda()
     batch_obj = batch_obj.cuda()
     batch_target = batch_target.cuda()
