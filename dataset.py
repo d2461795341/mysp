@@ -210,11 +210,11 @@ class CompositionDataset(Dataset):
 
         if self.phase == 'train':
             data = [
-                img, self.attr2idx[attr], self.obj2idx[obj], self.train_pair_to_idx[(attr, obj)]
+                img, self.attr2idx[attr], self.obj2idx[obj], self.train_pair_to_idx[(attr, obj)], image
             ]
         else:
             data = [
-                img, self.attr2idx[attr], self.obj2idx[obj], self.pair2idx[(attr, obj)]
+                img, self.attr2idx[attr], self.obj2idx[obj], self.pair2idx[(attr, obj)], image
             ]
 
         return data
